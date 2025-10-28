@@ -6,7 +6,8 @@
     <meta name="theme-color" content="#1a1a2e" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>File Explorer - Mobile First</title>
+    <title>Parser to File</title>
+    <script src="file:///android_asset/jszip.min.js"></script>
     <style>
         /* ===== CSS Variables ===== */
         :root {
@@ -568,6 +569,18 @@
             font-weight: 700;
             text-transform: uppercase;
         }
+        
+        /* Special badge styling for special files */
+        .file-type-badge.special {
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            color: #1a1a2e;
+            box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+            font-weight: 800;
+        }
+        
+        .file-type-badge.special::before {
+            content: '⭐ ';
+        }
 
         .modal-content {
             flex: 1;
@@ -944,6 +957,64 @@
                 background: #f8f8f8;
                 color: #1a1a2e;
             }
+            .file-path {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+    opacity: 0.7;
+}
+
+.file-card {
+    position: relative;
+}
+
+.folder-tree {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.folder-contents {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.storage-management {
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+}
+
+.storage-management h3 {
+    margin-bottom: 0.75rem;
+    color: var(--accent);
+    font-size: 1.1rem;
+}
+
+.storage-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.storage-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.storage-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.storage-actions .btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+}
         }
     </style>
 </head>
@@ -1156,7 +1227,24 @@
             ></iframe>
         </div>
     </div>
-
+<!-- Storage Management -->
+<div class="storage-management">
+  <h3>💾 Storage</h3>
+  <div class="storage-info">
+    <div class="storage-stats">
+      <span>Files: <strong id="file-count">0</strong></span>
+      <span>Size: <strong id="storage-size">0 KB</strong></span>
+    </div>
+    <div class="storage-actions">
+      <button class="btn btn-secondary" id="clear-storage">
+        🗑️ Clear
+      </button>
+      <button class="btn btn-secondary" id="storage-info">
+        ℹ️ Info
+      </button>
+    </div>
+  </div>
+</div>
     <!-- JSZip Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -1183,19 +1271,186 @@
             return d.innerHTML;
         }
 
-        function getFileType(fileName) {
-            if (!fileName || typeof fileName !== 'string') return 'file';
-            const ext = (fileName.split('.').pop() || '').toLowerCase();
-            const codeExt = ['js','ts','html','css','py','java','cpp','c','php','rb','go','rs','json','xml','md','txt','yml','yaml'];
-            if (codeExt.includes(ext)) return 'code';
-            if (['jpg','jpeg','png','gif','svg','bmp'].includes(ext)) return 'image';
-            return 'file';
+        // Enhanced file type detection with special file category
+function getFileType(fileName) {
+    if (!fileName || typeof fileName !== 'string') return 'file';
+    
+    const lowerName = fileName.toLowerCase();
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    
+    // ===== SPECIAL FILES (Priority 1) =====
+    // Files without extensions or important project files
+    const specialFiles = [
+        'readme', 'license', 'changelog', 'contributing', 'authors',
+        'makefile', 'dockerfile', 'rakefile', 'gemfile', 'procfile',
+        'vagrantfile', 'gruntfile', 'gulpfile', 'webpack.config',
+        'manifest', 'notice', 'patents', 'version', 'history'
+    ];
+    
+    // Check for exact special file matches (case-insensitive, with or without extensions)
+    for (const special of specialFiles) {
+        if (lowerName === special || 
+            lowerName === `${special}.md` || 
+            lowerName === `${special}.txt` ||
+            lowerName === `${special}.rst` ||
+            lowerName.startsWith(`${special}.`)) {
+            return 'special';
         }
+    }
+    
+    // ===== DOTFILES (Priority 2) =====
+    // Configuration files starting with dot
+    if (fileName.startsWith('.')) {
+        const configDotfiles = [
+            '.env', '.gitignore', '.dockerignore', '.npmignore',
+            '.eslintrc', '.prettierrc', '.babelrc', '.editorconfig',
+            '.gitattributes', '.npmrc', '.yarnrc', '.nvmrc'
+        ];
+        
+        // Check exact match or with extension
+        for (const dotfile of configDotfiles) {
+            if (lowerName === dotfile || lowerName.startsWith(dotfile + '.')) {
+                return 'special';
+            }
+        }
+        
+        // All other dotfiles are code
+        return 'code';
+    }
+    
+    // ===== CODE FILES (Priority 3) =====
+    const codeExts = [
+        'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'scss', 'sass', 'less',
+        'py', 'java', 'cpp', 'c', 'h', 'hpp', 'php', 'rb', 'go', 'rs',
+        'swift', 'kt', 'dart', 'scala', 'sh', 'bash', 'zsh', 'fish',
+        'json', 'xml', 'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf',
+        'md', 'txt', 'sql', 'graphql', 'proto', 'prisma'
+    ];
+    
+    // ===== IMAGE FILES (Priority 4) =====
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'bmp', 'webp', 'ico', 'tiff'];
+    
+    // ===== DOCUMENT FILES (Priority 5) =====
+    const documentExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+    
+    // Check extension-based types
+    if (codeExts.includes(ext)) return 'code';
+    if (imageExts.includes(ext)) return 'image';
+    if (documentExts.includes(ext)) return 'document';
+    
+    // Default fallback
+    return 'file';
+}
 
-        function getFileIcon(type) {
-            const icons = { code:'📝', image:'🖼️', file:'📄' };
-            return icons[type] || '📄';
+        // Enhanced file icon function with special file support
+function getFileIcon(type, fileName = '') {
+    const icons = { 
+        code: '📝', 
+        image: '🖼️', 
+        file: '📄',
+        document: '📋',
+        special: '⭐'  // Default icon for special files
+    };
+    
+    // Special icons for specific file types
+    if (fileName) {
+        const lowerName = fileName.toLowerCase();
+        
+        // ===== SPECIAL FILES (highest priority) =====
+        const specialFileIcons = {
+            // Documentation
+            'readme': '📖', 'readme.md': '📖', 'readme.txt': '📖',
+            'license': '📜', 'license.md': '📜', 'license.txt': '📜',
+            'changelog': '📝', 'changelog.md': '📝', 'changes': '📝',
+            'contributing': '🤝', 'contributing.md': '🤝',
+            'authors': '✍️', 'authors.md': '✍️', 'contributors': '✍️',
+            'history': '📚', 'history.md': '📚',
+            
+            // Build & Config files
+            'makefile': '🔨', 'rakefile': '💎', 'gemfile': '💎',
+            'dockerfile': '🐳', 'docker-compose.yml': '🐳',
+            'procfile': '⚙️', 'vagrantfile': '📦',
+            'gruntfile': '🔧', 'gulpfile': '🌊',
+            'webpack.config.js': '📦', 'rollup.config.js': '📦',
+            
+            // Project files
+            'manifest': '📋', 'manifest.json': '📋',
+            'notice': '📢', 'patents': '⚖️', 'version': '🔢'
+        };
+        
+        if (specialFileIcons[lowerName]) {
+            return specialFileIcons[lowerName];
         }
+        
+        // Check for partial matches (e.g., dockerfile.dev, makefile.linux)
+        for (const [key, icon] of Object.entries(specialFileIcons)) {
+            if (lowerName.startsWith(key) || lowerName.includes(key)) {
+                return icon;
+            }
+        }
+        
+        // ===== DOTFILES =====
+        if (fileName.startsWith('.')) {
+            const dotfileIcons = {
+                '.env': '🔐', '.env.local': '🔐', '.env.development': '🔐',
+                '.gitignore': '🚫', '.dockerignore': '🐳', '.npmignore': '📦',
+                '.eslintrc': '📏', '.eslintrc.js': '📏', '.eslintrc.json': '📏',
+                '.prettierrc': '💅', '.prettierrc.js': '💅',
+                '.babelrc': '🔄', '.editorconfig': '✏️',
+                '.gitattributes': '📌', '.npmrc': '📦', '.yarnrc': '🧶',
+                '.nvmrc': '🟢', '.ruby-version': '💎', '.python-version': '🐍'
+            };
+            
+            for (const [dotfile, icon] of Object.entries(dotfileIcons)) {
+                if (lowerName.startsWith(dotfile)) {
+                    return icon;
+                }
+            }
+            return '⚙️'; // Default icon for other dotfiles
+        }
+        
+        // ===== EXTENSION-BASED ICONS =====
+        const ext = (fileName.split('.').pop() || '').toLowerCase();
+        const extensionIcons = {
+            // JavaScript/TypeScript
+            'js': '📜', 'ts': '🔷', 'jsx': '⚛️', 'tsx': '🔶',
+            
+            // Web
+            'html': '🌐', 'css': '🎨', 'scss': '💅', 'sass': '💅', 'less': '🎨',
+            
+            // Data formats
+            'json': '📋', 'xml': '📰', 'yml': '📊', 'yaml': '📊', 'toml': '📋',
+            
+            // Documentation
+            'md': '📝', 'txt': '📄', 'rst': '📖',
+            
+            // Programming languages
+            'py': '🐍', 'java': '☕', 'cpp': '⚙️', 'c': '⚙️', 'h': '⚙️',
+            'php': '🐘', 'rb': '💎', 'go': '🐹', 'rs': '🦀',
+            'swift': '🐦', 'kt': '🎯', 'dart': '🎯', 'scala': '📈',
+            
+            // Shell
+            'sh': '🐚', 'bash': '🐚', 'zsh': '🐚', 'fish': '🐠',
+            
+            // Database
+            'sql': '🗄️', 'prisma': '💎', 'graphql': '📊',
+            
+            // Documents
+            'pdf': '📕', 'doc': '📘', 'docx': '📘',
+            'xls': '📗', 'xlsx': '📗', 'ppt': '📙', 'pptx': '📙',
+            
+            // Images
+            'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️',
+            'svg': '🎨', 'ico': '🖼️', 'bmp': '🖼️', 'webp': '🖼️'
+        };
+        
+        if (extensionIcons[ext]) {
+            return extensionIcons[ext];
+        }
+    }
+    
+    return icons[type] || '📄';
+}
 
         // ===== Toast Notifications =====
         function showToast(message, type = 'info') {
@@ -1256,134 +1511,441 @@
             }
         }
 
-        // ===== LocalStorage Functions =====
-        function saveFilesToLocalStorage() {
-            try {
-                localStorage.setItem('fileExplorerFiles', JSON.stringify(files));
-                appLog('Files saved to localStorage');
-            } catch (error) {
-                appLog('Error saving to localStorage:', error.message);
-                showToast('Failed to save files', 'error');
-            }
+        // ===== Enhanced Storage Functions =====
+function saveFilesToLocalStorage() {
+  try {
+    // Convert files object to array and compress large files
+    const filesArray = Object.values(files).map(file => {
+      // Truncate very large files to prevent quota issues
+      if (file.content && file.content.length > 100000) { // 100KB limit
+        appLog(`Truncating large file: ${file.name} from ${file.content.length} to 100000 chars`);
+        return {
+          ...file,
+          content: file.content.substring(0, 100000) + '\n// ... [FILE TRUNCATED DUE TO SIZE]'
+        };
+      }
+      return file;
+    });
+    
+    const storageData = {
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      fileCount: filesArray.length,
+      files: filesArray
+    };
+    
+    // Try to save with compression for large datasets
+    const dataString = JSON.stringify(storageData);
+    
+    if (dataString.length > 4000000) { // 4MB rough limit
+      appLog('Data too large, saving only essential files...');
+      // Keep only the most important files
+      const essentialFiles = filesArray.filter(file =>
+        file.name.includes('package.json') ||
+        file.name.includes('index.') ||
+        file.name.includes('App.') ||
+        file.name.length < 100 // small files
+      ).slice(0, 20); // max 20 files
+      
+      const essentialData = {
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        fileCount: essentialFiles.length,
+        files: essentialFiles
+      };
+      
+      localStorage.setItem('fileExplorerFiles', JSON.stringify(essentialData));
+      appLog(`Saved ${essentialFiles.length} essential files due to size limits`);
+    } else {
+      localStorage.setItem('fileExplorerFiles', dataString);
+      appLog(`Files saved to localStorage: ${filesArray.length} files, ${dataString.length} bytes`);
+    }
+    
+    return true;
+  } catch (error) {
+    appLog('Error saving to localStorage:', error.message);
+    
+    // Try alternative: Save to sessionStorage
+    try {
+      const essentialFiles = Object.values(files)
+        .filter(file => file.name.includes('package.json') || file.name.includes('index.'))
+        .slice(0, 10);
+      
+      sessionStorage.setItem('fileExplorerFiles', JSON.stringify({
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        files: essentialFiles
+      }));
+      appLog('Saved essential files to sessionStorage as fallback');
+    } catch (fallbackError) {
+      appLog('Failed to save to sessionStorage too:', fallbackError.message);
+    }
+    
+    showToast('Failed to save files - storage limit reached', 'error');
+    return false;
+  }
+}
+
+function loadFilesFromLocalStorage() {
+  try {
+    // Try localStorage first
+    let stored = localStorage.getItem('fileExplorerFiles');
+    let source = 'localStorage';
+    
+    // Fallback to sessionStorage
+    if (!stored) {
+      stored = sessionStorage.getItem('fileExplorerFiles');
+      source = 'sessionStorage';
+    }
+    
+    if (stored) {
+      const data = JSON.parse(stored);
+      
+      // Handle both old format (just files object) and new format (with metadata)
+      if (data.files && Array.isArray(data.files)) {
+        // New format with metadata
+        files = {};
+        data.files.forEach(file => {
+          if (file.name && file.content) {
+            files[file.name] = file;
+          }
+        });
+        appLog(`Files loaded from ${source}: ${data.files.length} files`);
+      } else {
+        // Old format (direct files object)
+        files = data;
+        appLog(`Files loaded from ${source} (legacy format): ${Object.keys(files).length} files`);
+      }
+      
+      updateCodeFolder();
+      return true;
+    }
+    return false;
+  } catch (error) {
+    appLog('Error loading from storage:', error.message);
+    
+    // Clear corrupted data
+    try {
+      localStorage.removeItem('fileExplorerFiles');
+      sessionStorage.removeItem('fileExplorerFiles');
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    
+    files = {};
+    return false;
+  }
+}
+
+// ===== Enhanced Parser Functions =====
+function parseCodeBlocks(text) {
+    try {
+        if (!text || typeof text !== 'string') {
+            appLog('Parser error: Invalid input text');
+            return [];
         }
 
-        function loadFilesFromLocalStorage() {
-            try {
-                const stored = localStorage.getItem('fileExplorerFiles');
-                if (stored) {
-                    files = JSON.parse(stored);
-                    appLog('Files loaded from localStorage:', Object.keys(files).length, 'files');
-                    updateCodeFolder();
-                }
-            } catch (error) {
-                appLog('Error loading from localStorage:', error.message);
-                showToast('Failed to load files', 'error');
-            }
+        appLog('Starting multi-format parsing...');
+        
+        // Try environment files first (dotfiles)
+        let parsed = parseEnvironmentFiles(text);
+        
+        // If no environment files found, try simple format
+        if (parsed.length === 0) {
+            parsed = parseSimpleFormat(text);
+        }
+        
+        // If that fails, try markdown parsing
+        if (parsed.length === 0) {
+            parsed = parseMarkdownCodeBlocks(text);
+        }
+        
+        // If still nothing, try aggressive extraction
+        if (parsed.length === 0) {
+            parsed = parseAggressive(text);
+        }
+        
+        appLog(`Total files parsed: ${parsed.length}`);
+        return parsed;
+    } catch (error) {
+        appLog('Main parser error:', error.message);
+        return [];
+    }
+}
+
+function parseMarkdownCodeBlocks(text) {
+    try {
+        if (!text || typeof text !== 'string') {
+            appLog('Parser error: Invalid input text');
+            return [];
         }
 
-        // ===== Parser Functions =====
-        function parseCodeBlocks(text) {
-            try {
-                if (!text || typeof text !== 'string') {
-                    appLog('Parser error: Invalid input text');
-                    return [];
-                }
+        appLog('Parsing markdown-style code blocks...');
+        const out = [];
+        const lines = text.split('\n');
+        let currentFile = null;
+        let inCodeBlock = false;
+        let codeBlockContent = [];
+        let codeBlockLanguage = '';
 
-                appLog('Parsing code blocks...');
-                const out = [];
-                const pattern = /\*\*\s*([^\s*]+\.[a-zA-Z0-9]+)\s*\*\*[^\n]*\n+\s*```[a-zA-Z]*\s*\n([\s\S]*?)\n\s*```/g;
-                let match;
-
-                while ((match = pattern.exec(text)) !== null) {
-                    const name = match[1]?.trim();
-                    let content = match[2]?.replace(/^\n+|\n+$/g, '') || '';
-
-                    if (!name) continue;
-
-                    out.push({ 
-                        name, 
-                        type: getFileType(name), 
-                        content 
-                    });
-                }
-
-                appLog(`Parser found ${out.length} files`);
-                return out;
-            } catch (error) {
-                appLog('Parser error:', error.message);
-                return [];
-            }
-        }
-
-        function parseDeepSeekProject(text) {
-            try {
-                appLog('Parsing DeepSeek project structure...');
-                const out = [];
-                
-                let currentFile = null;
-                let inCodeBlock = false;
-                let codeBlockContent = [];
-                
-                const lines = text.split('\n');
-                
-                for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i];
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Look for code block start ```
+            const codeStartMatch = line.match(/^\s*'```'(\w*)/);
+            if (codeStartMatch) {
+                if (!inCodeBlock) {
+                    // Starting a code block - check if previous line was a filename
+                    inCodeBlock = true;
+                    codeBlockLanguage = codeStartMatch[1] || '';
+                    codeBlockContent = [];
                     
-                    const fileHeaderMatch = line.match(/(?:^|\*\*)([^\s*]+\.[a-zA-Z0-9]+)(?:\s*\([^)]*\))?(?:\*\*|$)/);
-                    
-                    if (fileHeaderMatch) {
-                        if (currentFile && codeBlockContent.length > 0) {
-                            out.push({
-                                name: currentFile,
-                                type: getFileType(currentFile),
-                                content: codeBlockContent.join('\n')
-                            });
-                        }
-                        
-                        currentFile = fileHeaderMatch[1].replace(/\*\*/g, '').trim();
-                        codeBlockContent = [];
-                        inCodeBlock = false;
-                        continue;
-                    }
-                    
-                    if (line.trim().startsWith('```')) {
-                        if (!inCodeBlock) {
-                            inCodeBlock = true;
-                            codeBlockContent = [];
-                        } else {
-                            inCodeBlock = false;
-                            if (currentFile && codeBlockContent.length > 0) {
-                                out.push({
-                                    name: currentFile,
-                                    type: getFileType(currentFile),
-                                    content: codeBlockContent.join('\n')
-                                });
-                                currentFile = null;
+                    // Look backwards for filename (skip empty lines)
+                    for (let j = i - 1; j >= 0; j--) {
+                        const prevLine = lines[j].trim();
+                        if (prevLine && !prevLine.startsWith('```')) {
+                            // Check if this looks like a filename
+                            if (isFileName(prevLine)) {
+                                currentFile = prevLine;
+                                appLog(`Found file: ${currentFile} with language: ${codeBlockLanguage}`);
                             }
+                            break;
                         }
-                        continue;
                     }
-                    
-                    if (inCodeBlock && currentFile) {
-                        codeBlockContent.push(line);
+                } else {
+                    // Ending a code block
+                    inCodeBlock = false;
+                    if (currentFile && codeBlockContent.length > 0) {
+                        out.push({
+                            name: currentFile,
+                            type: getFileType(currentFile),
+                            content: codeBlockContent.join('\n').trim()
+                        });
+                        appLog(`Added file: ${currentFile} (${codeBlockContent.length} lines)`);
                     }
+                    currentFile = null;
+                    codeBlockContent = [];
                 }
-                
-                if (currentFile && codeBlockContent.length > 0) {
-                    out.push({
-                        name: currentFile,
-                        type: getFileType(currentFile),
-                        content: codeBlockContent.join('\n')
-                    });
-                }
-                
-                appLog(`DeepSeek parser created ${out.length} file(s)`);
-                return out;
-            } catch (error) {
-                appLog('DeepSeek parser error:', error.message);
-                return [];
+                continue;
+            }
+
+            // If we're in a code block, collect content
+            if (inCodeBlock && currentFile) {
+                codeBlockContent.push(line);
             }
         }
+
+        appLog(`Markdown parser found: ${out.length} files`);
+        return out;
+    } catch (error) {
+        appLog('Markdown parser error:', error.message);
+        return [];
+    }
+}
+
+function isFileName(line) {
+    // Check if line looks like a filename with extension
+    const filenamePattern = /^[a-zA-Z0-9_\-\.\/]+\.([a-zA-Z0-9]+)$/;
+    const dotfilePattern = /^\.[a-zA-Z0-9_\-\.]+$/; // Files starting with dot
+    const pathPattern = /^[a-zA-Z0-9_\-\.\/]+\/[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+$/;
+    
+    const commonExtensions = ['json', 'ts', 'js', 'html', 'css', 'yml', 'yaml', 'md', 'txt', 'Dockerfile', 'gitignore', 'env', 'prisma'];
+    const commonDotfiles = ['.env', '.gitignore', '.prisma', '.dockerignore', '.eslintrc', '.prettierrc'];
+    
+    // Check for common dotfiles
+    if (commonDotfiles.includes(line)) {
+        return true;
+    }
+    
+    // Check for dotfile pattern
+    if (dotfilePattern.test(line)) {
+        return true;
+    }
+    
+    const match = line.match(filenamePattern);
+    if (match) {
+        const ext = match[1].toLowerCase();
+        return commonExtensions.includes(ext) || ext.length <= 5;
+    }
+    
+    // Check for file paths
+    return pathPattern.test(line);
+}
+
+function parseEnvironmentFiles(text) {
+    try {
+        appLog('Parsing environment and configuration files...');
+        const out = [];
+        
+        // Look for sections that mention environment files
+        const envSectionRegex = /Environment\s*&\s*Configuration\s*Files[\s\S]*?(?=##|\d+\.|\*\*|\n\s*\n\s*\n|$)/i;
+        const envSection = text.match(envSectionRegex);
+        
+        if (envSection) {
+            appLog('Found environment section, parsing dotfiles...');
+            const envText = envSection[0];
+            
+            // Look for dotfile patterns in this section
+            const dotfilePattern = /([\.a-zA-Z0-9_\-]+)\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
+            let match;
+            
+            while ((match = dotfilePattern.exec(envText)) !== null) {
+                const name = match[1].trim();
+                const content = match[2].trim();
+                
+                if (name.startsWith('.') && content.length > 5) {
+                    out.push({
+                        name: name,
+                        type: getFileType(name),
+                        content: content
+                    });
+                    appLog(`Environment file found: ${name}`);
+                }
+            }
+        }
+        
+        return out;
+    } catch (error) {
+        appLog('Environment parser error:', error.message);
+        return [];
+    }
+}
+
+function parseSimpleFormat(text) {
+    try {
+        appLog('Parsing simple filename + code block format...');
+        const out = [];
+        
+        // Pattern 1: Files with extensions (standard format)
+        const pattern = /([a-zA-Z0-9_\-\.\/]*\.[a-zA-Z0-9_\-\.]+)\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
+        
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+            const name = match[1].trim();
+            let content = match[2].trim();
+            
+            if (name && content && content.length > 5) {
+                out.push({
+                    name: name,
+                    type: getFileType(name),
+                    content: content
+                });
+                appLog(`✓ Simple format: ${name}`);
+            }
+        }
+        
+        // Pattern 2: Dotfiles (starting with .)
+        const dotfilePattern = /([\.a-zA-Z0-9_\-]+)\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
+        let dotfileMatch;
+        while ((dotfileMatch = dotfilePattern.exec(text)) !== null) {
+            const name = dotfileMatch[1].trim();
+            const content = dotfileMatch[2].trim();
+            
+            if (name.startsWith('.') && content.length > 5 && !out.some(f => f.name === name)) {
+                out.push({
+                    name: name,
+                    type: getFileType(name),
+                    content: content
+                });
+                appLog(`✓ Dotfile: ${name}`);
+            }
+        }
+        
+        // Pattern 3: Special files WITHOUT extensions (README, Makefile, Dockerfile, etc.)
+        // More flexible pattern to catch files mentioned on their own line before code block
+        const specialFilePattern = /(^|\n)(README|LICENSE|CHANGELOG|CONTRIBUTING|AUTHORS|NOTICE|PATENTS|HISTORY|Makefile|Dockerfile|Rakefile|Gemfile|Procfile|Vagrantfile|Gruntfile|Gulpfile)(\.[a-zA-Z]+)?\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/gi;
+        
+        let specialMatch;
+        while ((specialMatch = specialFilePattern.exec(text)) !== null) {
+            const baseName = specialMatch[2]; // The special file name (README, Makefile, etc.)
+            const extension = specialMatch[3] || ''; // Optional extension (.md, .txt, etc.)
+            const name = baseName + extension;
+            const content = specialMatch[4].trim();
+            
+            if (content.length > 5 && !out.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+                out.push({
+                    name: name,
+                    type: getFileType(name),
+                    content: content
+                });
+                appLog(`✓ Special file: ${name}`);
+            }
+        }
+        
+        // Pattern 4: Aggressive special file detection (case-insensitive word followed by code block)
+        const aggressiveSpecialPattern = /(^|\n)([A-Z][a-zA-Z]*(?:file|FILE)?)\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
+        
+        let aggressiveMatch;
+        while ((aggressiveMatch = aggressiveSpecialPattern.exec(text)) !== null) {
+            const name = aggressiveMatch[2].trim();
+            const content = aggressiveMatch[3].trim();
+            
+            // Check if it's a known special file
+            const specialNames = [
+                'readme', 'license', 'changelog', 'contributing', 'authors',
+                'makefile', 'dockerfile', 'rakefile', 'gemfile', 'procfile',
+                'vagrantfile', 'gruntfile', 'gulpfile', 'manifest', 'notice'
+            ];
+            
+            if (specialNames.includes(name.toLowerCase()) && 
+                content.length > 5 && 
+                !out.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+                out.push({
+                    name: name,
+                    type: getFileType(name),
+                    content: content
+                });
+                appLog(`✓ Aggressive special file: ${name}`);
+            }
+        }
+        
+        appLog(`Simple parser found: ${out.length} files`);
+        return out;
+    } catch (error) {
+        appLog('Simple parser error:', error.message);
+        return [];
+    }
+}
+
+function parseAggressive(text) {
+    try {
+        appLog('Trying aggressive parsing...');
+        const out = [];
+        
+        // Split by code blocks and look for filenames before each
+        const codeBlocks = text.split(/'```'/);
+        
+        for (let i = 0; i < codeBlocks.length; i++) {
+            if (i % 2 === 1) { // We're in a code block (odd indices)
+                const codeContent = codeBlocks[i];
+                // Look at the text before this code block for a filename
+                const beforeBlock = codeBlocks[i - 1];
+                
+                if (beforeBlock) {
+                    // Split by lines and look for the last non-empty line
+                    const lines = beforeBlock.split('\n').filter(line => line.trim());
+                    if (lines.length > 0) {
+                        const lastLine = lines[lines.length - 1].trim();
+                        if (isFileName(lastLine)) {
+                            out.push({
+                                name: lastLine,
+                                type: getFileType(lastLine),
+                                content: codeContent.replace(/^\w*\s*\n?/, '').trim() // Remove language specifier
+                            });
+                            appLog(`Aggressive found: ${lastLine}`);
+                        }
+                    }
+                }
+            }
+        }
+        
+        appLog(`Aggressive parser found: ${out.length} files`);
+        return out;
+    } catch (error) {
+        appLog('Aggressive parser error:', error.message);
+        return [];
+    }
+}
 
         // ===== Modal Functions =====
         function showPreview(fileName, fileType, content) {
@@ -1398,11 +1960,17 @@
                 title.textContent = fileName || 'Unknown File';
                 badge.textContent = fileType || 'file';
                 
-                if (fileType === 'code') {
+                // Add special class for special files
+                badge.className = 'file-type-badge';
+                if (fileType === 'special') {
+                    badge.classList.add('special');
+                }
+                
+                if (fileType === 'code' || fileType === 'special') {
                     contentDiv.innerHTML = `<div class="file-content">${escapeHtml(content || '')}</div>`;
                 } else {
                     contentDiv.innerHTML = `<div style="text-align:center;padding:2rem;">
-                        <div style="font-size:4rem;">${getFileIcon(fileType)}</div>
+                        <div style="font-size:4rem;">${getFileIcon(fileType, fileName)}</div>
                         <h2>${escapeHtml(fileName || 'Unknown File')}</h2>
                         <p>Type: ${fileType || 'file'}</p>
                     </div>`;
@@ -1429,6 +1997,13 @@
             try {
                 title.textContent = fileName || 'Unknown File';
                 badge.textContent = fileType || 'file';
+                
+                // Add special class for special files
+                badge.className = 'file-type-badge';
+                if (fileType === 'special') {
+                    badge.classList.add('special');
+                }
+                
                 textarea.value = content || '';
                 currentEditingFile = fileName;
                 
@@ -1493,98 +2068,191 @@
             }
         }
 
-        // ===== UI Update Functions =====
-        function updateCodeFolder() {
-            const grid = getElement('code-file-grid');
-            const folder = getElement('code-folder');
-
-            if (!grid || !folder) return;
-
-            try {
-                grid.innerHTML = '';
-                folder.innerHTML = '';
-
-                const codeFiles = Object.values(files).filter(f => f && f.type === 'code');
-                
-                if (codeFiles.length === 0) {
-                    grid.innerHTML = `
-                        <div class="empty-state">
-                            <div class="empty-state-icon">📄</div>
-                            <div class="empty-state-text">
-                                No code files yet.<br>
-                                Use the parser to create files from code blocks.
-                            </div>
-                        </div>
-                    `;
-                    appLog('No code files present');
-                    return;
-                }
-
-                codeFiles.forEach(file => {
-                    if (!file.name) return;
-
-                    // Grid card
-                    const card = document.createElement('div');
-                    card.className = 'file-card';
-                    card.innerHTML = `
-                        <div class="file-card-icon">${getFileIcon(file.type)}</div>
-                        <div class="file-card-name">${escapeHtml(file.name)}</div>
-                        <div class="file-actions">
-                            <button class="file-action-btn preview-btn">👁️ View</button>
-                            <button class="file-action-btn edit-btn">✏️ Edit</button>
-                            <button class="file-action-btn delete-btn">🗑️ Del</button>
-                        </div>
-                    `;
-
-                    card.querySelector('.preview-btn').addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        showPreview(file.name, file.type, file.content);
-                    });
-
-                    card.querySelector('.edit-btn').addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        showEdit(file.name, file.type, file.content);
-                    });
-
-                    card.querySelector('.delete-btn').addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete ${file.name}?`)) {
-                            delete files[file.name];
-                            saveFilesToLocalStorage();
-                            updateCodeFolder();
-                            showToast(`Deleted ${file.name}`, 'success');
-                        }
-                    });
-
-                    card.addEventListener('click', () => {
-                        showPreview(file.name, file.type, file.content);
-                    });
-
-                    grid.appendChild(card);
-
-                    // Folder tree item
-                    const fileEl = document.createElement('div');
-                    fileEl.className = 'file';
-                    fileEl.innerHTML = `
+// Enhanced file display with better organization
+function updateCodeFolder() {
+  const grid = getElement('code-file-grid');
+  const folder = getElement('code-folder');
+  
+  if (!grid || !folder) return;
+  
+  try {
+    grid.innerHTML = '';
+    folder.innerHTML = '';
+    
+    const codeFiles = Object.values(files).filter(f => f && f.type === 'code');
+    
+    if (codeFiles.length === 0) {
+      grid.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📄</div>
+                    <div class="empty-state-text">
+                        No code files yet.<br>
+                        Use the parser to create files from code blocks.
+                    </div>
+                </div>
+            `;
+      appLog('No code files present');
+      return;
+    }
+    
+    // Group files by folder
+    const fileGroups = {};
+    codeFiles.forEach(file => {
+      if (!file.name) return;
+      
+      const pathParts = file.name.split('/');
+      let folderName = 'Root';
+      
+      if (pathParts.length > 1) {
+        folderName = pathParts.slice(0, -1).join('/');
+      }
+      
+      if (!fileGroups[folderName]) {
+        fileGroups[folderName] = [];
+      }
+      fileGroups[folderName].push(file);
+    });
+    
+    // Create folder structure
+    Object.keys(fileGroups).sort().forEach(folderName => {
+      const folderFiles = fileGroups[folderName];
+      
+      // Create folder element for tree view
+      if (folderName !== 'Root') {
+        const folderEl = document.createElement('div');
+        folderEl.className = 'folder';
+        folderEl.innerHTML = `
+                    <div class="label">
+                        <div class="folder-icon">📁</div>
+                        <div class="name">${escapeHtml(folderName)}</div>
+                    </div>
+                    <div class="folder-contents"></div>
+                `;
+        
+        folderFiles.forEach(file => {
+          const fileEl = document.createElement('div');
+          fileEl.className = 'file';
+          fileEl.innerHTML = `
                         <div class="label">
-                            <div class="file-icon">${getFileIcon(file.type)}</div>
-                            <div class="name">${escapeHtml(file.name)}</div>
+                            <div class="file-icon">${getFileIcon(file.type, file.name)}</div>
+                            <div class="name">${escapeHtml(file.name.split('/').pop())}</div>
                         </div>
                     `;
-                    fileEl.addEventListener('click', () => {
-                        showPreview(file.name, file.type, file.content);
-                    });
-                    folder.appendChild(fileEl);
-                });
+          fileEl.addEventListener('click', () => {
+            showPreview(file.name, file.type, file.content);
+          });
+          folderEl.querySelector('.folder-contents').appendChild(fileEl);
+        });
+        
+        folder.appendChild(folderEl);
+        
+        // Toggle folder on click
+        folderEl.querySelector('.label').addEventListener('click', () => {
+          folderEl.classList.toggle('open');
+        });
+      }
+      
+      // Create grid cards (only for Root files or all files in grid view)
+      folderFiles.forEach(file => {
+        const displayName = folderName === 'Root' ? file.name : file.name.split('/').pop();
+        
+        const card = document.createElement('div');
+        card.className = 'file-card';
+        card.innerHTML = `
+                    <div class="file-card-icon">${getFileIcon(file.type, file.name)}</div>
+                    <div class="file-card-name">${escapeHtml(displayName)}</div>
+                    ${folderName !== 'Root' ? `<div class="file-path">${escapeHtml(folderName)}/</div>` : ''}
+                    <div class="file-actions">
+                        <button class="file-action-btn preview-btn">👁️ View</button>
+                        <button class="file-action-btn edit-btn">✏️ Edit</button>
+                        <button class="file-action-btn delete-btn">🗑️ Del</button>
+                    </div>
+                `;
+        
+        card.querySelector('.preview-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          showPreview(file.name, file.type, file.content);
+        });
+        
+        card.querySelector('.edit-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          showEdit(file.name, file.type, file.content);
+        });
+        
+        card.querySelector('.delete-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (confirm(`Delete ${file.name}?`)) {
+            delete files[file.name];
+            saveFilesToLocalStorage();
+            updateCodeFolder();
+            showToast(`Deleted ${file.name}`, 'success');
+          }
+        });
+        
+        card.addEventListener('click', () => {
+          showPreview(file.name, file.type, file.content);
+        });
+        
+        grid.appendChild(card);
+      });
+    });
+    // Update storage info
+        updateStorageInfo();
+        
+    appLog('Rendered', codeFiles.length, 'files in', Object.keys(fileGroups).length, 'folders');
+  } catch (error) {
+    appLog('Error updating code folder:', error.message);
+    showToast('Failed to update file list', 'error');
+  }
+}
 
-                appLog('Rendered', codeFiles.length, 'files');
-            } catch (error) {
-                appLog('Error updating code folder:', error.message);
-                showToast('Failed to update file list', 'error');
-            }
-        }
+function clearStorage() {
+    try {
+        localStorage.removeItem('fileExplorerFiles');
+        sessionStorage.removeItem('fileExplorerFiles');
+        files = {};
+        updateCodeFolder();
+        appLog('Storage cleared successfully');
+        showToast('Storage cleared', 'success');
+        return true;
+    } catch (error) {
+        appLog('Error clearing storage:', error.message);
+        showToast('Failed to clear storage', 'error');
+        return false;
+    }
+}
 
-        // ===== ZIP Upload =====
+function getStorageInfo() {
+    try {
+        const lsData = localStorage.getItem('fileExplorerFiles');
+        const ssData = sessionStorage.getItem('fileExplorerFiles');
+        
+        const info = {
+            localStorage: lsData ? `${(lsData.length / 1024).toFixed(2)} KB` : 'Empty',
+            sessionStorage: ssData ? `${(ssData.length / 1024).toFixed(2)} KB` : 'Empty',
+            fileCount: Object.keys(files).length,
+            totalSize: JSON.stringify(files).length
+        };
+        
+        appLog('Storage info:', info);
+        return info;
+    } catch (error) {
+        return { error: error.message };
+    }
+}
+
+function updateStorageInfo() {
+  const fileCount = Object.keys(files).length;
+  const totalSize = JSON.stringify(files).length;
+  
+  const fileCountEl = getElement('file-count');
+  const storageSizeEl = getElement('storage-size');
+  
+  if (fileCountEl) fileCountEl.textContent = fileCount;
+  if (storageSizeEl) storageSizeEl.textContent = `${(totalSize / 1024).toFixed(1)} KB`;
+}
+
+        // ==== ZIP Upload =====
         function handleZipUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -1658,6 +2326,28 @@
             reader.readAsArrayBuffer(file);
         }
 
+// Debug function to test patterns
+function debugParser(text) {
+  appLog('=== PARSER DEBUG ===');
+  
+  // Test different patterns
+  const patterns = [
+    { name: 'File declarations', regex: /\*\*\s*([a-zA-Z0-9_\/\-\.]+\.[a-zA-Z0-9]+)\s*\*\*/g },
+    { name: 'Numbered sections', regex: /\d+\.\s*[^\n]+\n+\*\*\s*([^\s*]+\.[a-zA-Z0-9]+)\s*\*\*/g },
+    { name: 'Code blocks', regex: /```[a-zA-Z]*\s*\n([\s\S]*?)\n\s*```/g }
+  ];
+  
+  patterns.forEach(pattern => {
+    const matches = [...text.matchAll(pattern.regex)];
+    appLog(`${pattern.name}: ${matches.length} matches`);
+    matches.slice(0, 5).forEach(match => {
+      appLog(`  - ${match[1] || match[0].substring(0, 50)}`);
+    });
+  });
+  
+  appLog('=== END DEBUG ===');
+}
+
         // ===== Event Handlers =====
         function setupEventListeners() {
             // Menu toggle
@@ -1693,38 +2383,69 @@
                 }
             });
 
-            // Parse button
-            getElement('parse-btn')?.addEventListener('click', () => {
-                const textarea = getElement('parser-textarea');
-                if (!textarea) return;
+            // Parse button with better format detection
+getElement('parse-btn')?.addEventListener('click', () => {
+const textarea = getElement('parser-textarea');
+if (!textarea) return;
 
-                const text = textarea.value;
-                if (!text.trim()) {
-                    showToast('Parser input is empty', 'error');
-                    return;
-                }
+const text = textarea.value;
+if (!text.trim()) {
+showToast('Parser input is empty', 'error');
+return;
+}
 
-                let parsed = parseDeepSeekProject(text);
-                if (parsed.length === 0) {
-                    parsed = parseCodeBlocks(text);
-                }
+appLog('=== STARTING PARSING ===');
+appLog('Input length:', text.length, 'characters');
 
-                if (parsed.length === 0) {
-                    showToast('No code blocks found', 'error');
-                    return;
-                }
+// Count code blocks for debugging
+const codeBlockCount = (text.match(/'```'/g) || []).length / 2;
+appLog('Code blocks found:', codeBlockCount);
 
-                parsed.forEach(f => {
-                    if (f.name) {
-                        files[f.name] = f;
-                    }
-                });
+let parsed = parseCodeBlocks(text);
 
-                textarea.value = '';
-                saveFilesToLocalStorage();
-                updateCodeFolder();
-                showToast(`Created ${parsed.length} file(s)`, 'success');
-            });
+if (parsed.length === 0) {
+showToast('No code files found in the input', 'error');
+appLog('=== PARSING FAILED ===');
+appLog('Debug: First 500 chars:', text.substring(0, 500).replace(/\n/g, '\\n'));
+
+// Show what the parser is seeing
+const lines = text.split('\n');
+appLog('First 20 lines:');
+lines.slice(0, 20).forEach((line, i) => {
+appLog(`${i}: ${line.substring(0, 100)}`);
+});
+return;
+}
+
+// Process found files
+let createdCount = 0;
+let updatedCount = 0;
+
+parsed.forEach(f => {
+if (f.name && f.content) {
+const exists = files[f.name];
+files[f.name] = f;
+if (exists) {
+updatedCount++;
+} else {
+createdCount++;
+}
+}
+});
+
+textarea.value = '';
+saveFilesToLocalStorage();
+updateCodeFolder();
+
+const message = `Found ${createdCount} new files, ${updatedCount} updated`;
+showToast(message, 'success');
+appLog(`=== PARSING SUCCESS: ${createdCount} created, ${updatedCount} updated ===`);
+
+// Show detailed report
+parsed.forEach(f => {
+appLog(`• ${f.name} (${f.content.length} chars, ${f.content.split('\n').length} lines)`);
+});
+});
 
             // Clear parser
             getElement('clear-parser')?.addEventListener('click', () => {
@@ -1774,41 +2495,51 @@
 
             // Download
             getElement('download-btn')?.addEventListener('click', () => {
-                try {
-                    const codeFiles = Object.values(files).filter(f => f && f.type === 'code');
-                    if (codeFiles.length === 0) {
-                        showToast('No files to download', 'info');
-                        return;
-                    }
+    try {
+        const codeFiles = Object.values(files).filter(f => f && f.type === 'code');
+        if (codeFiles.length === 0) {
+            showToast('No files to download', 'info');
+            return;
+        }
 
-                    if (typeof JSZip === 'undefined') {
-                        showToast('JSZip library not loaded', 'error');
-                        return;
-                    }
+        if (typeof JSZip === 'undefined') {
+            showToast('JSZip library not loaded', 'error');
+            return;
+        }
 
-                    const zip = new JSZip();
-                    codeFiles.forEach(f => {
-                        if (f.name && f.content !== undefined) {
-                            zip.file(f.name, f.content);
-                        }
-                    });
+        const zip = new JSZip();
+        codeFiles.forEach(f => {
+            if (f.name && f.content !== undefined) {
+                zip.file(f.name, f.content);
+            }
+        });
 
-                    zip.generateAsync({ type: 'blob' }).then(content => {
-                        const a = document.createElement('a');
-                        const url = URL.createObjectURL(content);
-                        a.href = url;
-                        a.download = 'project.zip';
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                        showToast('Project downloaded', 'success');
-                    });
-                } catch (error) {
-                    appLog('Download error:', error.message);
-                    showToast('Failed to download project', 'error');
-                }
-            });
+        zip.generateAsync({ type: 'base64' }).then(content => {
+            // Check if running in Android WebView
+            if (typeof Android !== 'undefined' && Android.saveFile) {
+                // Use Android interface
+                Android.saveFile('project.zip', 'data:application/zip;base64,' + content);
+                showToast('Project saved to Downloads', 'success');
+            } else {
+                // Fallback to browser download
+                zip.generateAsync({ type: 'blob' }).then(blob => {
+                    const a = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    a.href = url;
+                    a.download = 'project.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    showToast('Project downloaded', 'success');
+                });
+            }
+        });
+    } catch (error) {
+        appLog('Download error:', error.message);
+        showToast('Failed to download project', 'error');
+    }
+});
 
             // Upload ZIP
             getElement('zip-upload')?.addEventListener('change', handleZipUpload);
@@ -1930,18 +2661,19 @@
 
         // ===== Initialization =====
         document.addEventListener('DOMContentLoaded', () => {
-            try {
-                appLog('🚀 File Explorer Mobile v1.0 initialized');
-                loadFilesFromLocalStorage();
-                setupEventListeners();
-                updateCodeFolder();
-                showToast('Welcome to File Explorer!', 'success');
-            } catch (error) {
-                console.error('Fatal error during initialization:', error);
-                appLog('Fatal error:', error.message);
-                showToast('Failed to initialize app', 'error');
-            }
-        });
+try {
+appLog('🚀 Parser to File v1.0 initialized');
+loadFilesFromLocalStorage();
+setupEventListeners();
+updateCodeFolder();
+updateStorageInfo(); // Add this line
+showToast('Welcome to Parser to File!', 'success');
+} catch (error) {
+console.error('Fatal error during initialization:', error);
+appLog('Fatal error:', error.message);
+showToast('Failed to initialize app', 'error');
+}
+});
 
         // Global error handler
         window.addEventListener('error', (event) => {
@@ -1949,6 +2681,18 @@
             appLog('Global error:', event.error?.message || 'Unknown error');
             showToast('An error occurred', 'error');
         });
+        
+        // Storage management
+getElement('clear-storage')?.addEventListener('click', () => {
+    if (confirm('Clear all files and storage? This cannot be undone.')) {
+        clearStorage();
+    }
+});
+
+getElement('storage-info')?.addEventListener('click', () => {
+    const info = getStorageInfo();
+    showToast(`Files: ${info.fileCount}, Size: ${(info.totalSize / 1024).toFixed(1)} KB`, 'info');
+});
     </script>
 </body>
 </html>
