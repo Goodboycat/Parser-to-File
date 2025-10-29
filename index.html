@@ -2636,27 +2636,9 @@ appLog(`• ${f.name} (${f.content.length} chars, ${f.content.split('\n').length
                 });
             });
 
-            // Keyboard shortcuts
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') {
-                    document.querySelectorAll('.modal-overlay.active').forEach(modal => {
-                        modal.classList.remove('active');
-                    });
-                    sidebar.classList.remove('open');
-                    document.body.style.overflow = '';
-                }
-
-                if (e.ctrlKey || e.metaKey) {
-                    if (e.key === 's') {
-                        e.preventDefault();
-                        const saveBtn = getElement('save-btn');
-                        if (getElement('edit-modal').classList.contains('active')) {
-                            saveBtn?.click();
-                        }
-                    }
-                }
-            });
-
+            // Keyboard shortcuts removed for mobile-first approach
+            // Users can use touch interactions: tap close buttons, swipe gestures
+            
             appLog('Event listeners initialized');
         }
 
