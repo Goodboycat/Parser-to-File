@@ -2079,19 +2079,20 @@ function updateCodeFolder() {
     grid.innerHTML = '';
     folder.innerHTML = '';
     
-    const codeFiles = Object.values(files).filter(f => f && f.type === 'code');
+    // Show ALL file types: code, special, image, document (not just code)
+    const codeFiles = Object.values(files).filter(f => f && f.type);
     
     if (codeFiles.length === 0) {
       grid.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">📄</div>
                     <div class="empty-state-text">
-                        No code files yet.<br>
+                        No files yet.<br>
                         Use the parser to create files from code blocks.
                     </div>
                 </div>
             `;
-      appLog('No code files present');
+      appLog('No files present');
       return;
     }
     
