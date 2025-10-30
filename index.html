@@ -1015,6 +1015,107 @@
     padding: 0.5rem 0.75rem;
     font-size: 0.8rem;
 }
+
+/* ===== Bulk Delete Controls ===== */
+.bulk-delete-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    gap: 0.75rem;
+}
+
+.selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.selection-count {
+    background: var(--accent);
+    color: var(--bg);
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.bulk-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-select-all, .btn-deselect-all, .btn-bulk-delete {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.btn-select-all {
+    background: var(--accent);
+    color: var(--bg);
+}
+
+.btn-select-all:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+.btn-deselect-all {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text);
+}
+
+.btn-deselect-all:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-bulk-delete {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    color: white;
+}
+
+.btn-bulk-delete:hover {
+    background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+    transform: translateY(-1px);
+}
+
+.btn-bulk-delete:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* File card checkbox styling */
+.file-card-checkbox {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 10;
+    width: 24px;
+    height: 24px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.file-card.selected {
+    border: 2px solid var(--accent);
+    background: rgba(6, 182, 212, 0.1);
+    transform: scale(1.02);
+}
+
+.file-card {
+    position: relative;
+}
         }
     </style>
 </head>
@@ -1127,6 +1228,20 @@
             <!-- File Explorer -->
             <main class="file-explorer" role="main">
                 <div class="path">📂 Home / Code</div>
+                
+                <!-- Bulk Delete Controls -->
+                <div class="bulk-delete-controls" id="bulk-delete-controls" style="display: none;">
+                    <div class="selection-info">
+                        <span>Selected:</span>
+                        <span class="selection-count" id="selection-count">0</span>
+                    </div>
+                    <div class="bulk-actions">
+                        <button class="btn-select-all" id="select-all-btn">✅ All</button>
+                        <button class="btn-deselect-all" id="deselect-all-btn">❌ None</button>
+                        <button class="btn-bulk-delete" id="bulk-delete-btn" disabled>🗑️ Delete</button>
+                    </div>
+                </div>
+                
                 <div class="file-grid" id="code-file-grid">
                     <div class="empty-state" id="empty-state">
                         <div class="empty-state-icon">📄</div>
@@ -2068,6 +2183,63 @@ function parseAggressive(text) {
             }
         }
 
+// Selection state management
+let selectedFiles = new Set();
+
+function updateSelectionUI() {
+  const count = selectedFiles.size;
+  const countEl = getElement('selection-count');
+  const bulkDeleteBtn = getElement('bulk-delete-btn');
+  const controlsEl = getElement('bulk-delete-controls');
+  
+  if (countEl) countEl.textContent = count;
+  if (bulkDeleteBtn) bulkDeleteBtn.disabled = count === 0;
+  
+  // Show/hide controls based on whether files exist
+  const totalFiles = Object.values(files).filter(f => f && f.type).length;
+  if (controlsEl) {
+    controlsEl.style.display = totalFiles > 0 ? 'flex' : 'none';
+  }
+}
+
+function toggleFileSelection(fileName) {
+  if (selectedFiles.has(fileName)) {
+    selectedFiles.delete(fileName);
+  } else {
+    selectedFiles.add(fileName);
+  }
+  updateSelectionUI();
+  updateCodeFolder();
+}
+
+function selectAllFiles() {
+  const allFiles = Object.values(files).filter(f => f && f.type);
+  allFiles.forEach(file => selectedFiles.add(file.name));
+  updateSelectionUI();
+  updateCodeFolder();
+}
+
+function deselectAllFiles() {
+  selectedFiles.clear();
+  updateSelectionUI();
+  updateCodeFolder();
+}
+
+function deleteSelectedFiles() {
+  const count = selectedFiles.size;
+  if (count === 0) return;
+  
+  if (confirm(`Delete ${count} selected file${count > 1 ? 's' : ''}?`)) {
+    selectedFiles.forEach(fileName => {
+      delete files[fileName];
+    });
+    selectedFiles.clear();
+    saveFilesToLocalStorage();
+    updateCodeFolder();
+    showToast(`Deleted ${count} file${count > 1 ? 's' : ''}`, 'success');
+  }
+}
+
 // Enhanced file display with better organization
 function updateCodeFolder() {
   const grid = getElement('code-file-grid');
@@ -2156,10 +2328,12 @@ function updateCodeFolder() {
       // Create grid cards (only for Root files or all files in grid view)
       folderFiles.forEach(file => {
         const displayName = folderName === 'Root' ? file.name : file.name.split('/').pop();
+        const isSelected = selectedFiles.has(file.name);
         
         const card = document.createElement('div');
-        card.className = 'file-card';
+        card.className = `file-card ${isSelected ? 'selected' : ''}`;
         card.innerHTML = `
+                    <input type="checkbox" class="file-card-checkbox" ${isSelected ? 'checked' : ''} />
                     <div class="file-card-icon">${getFileIcon(file.type, file.name)}</div>
                     <div class="file-card-name">${escapeHtml(displayName)}</div>
                     ${folderName !== 'Root' ? `<div class="file-path">${escapeHtml(folderName)}/</div>` : ''}
@@ -2169,6 +2343,13 @@ function updateCodeFolder() {
                         <button class="file-action-btn delete-btn">🗑️ Del</button>
                     </div>
                 `;
+        
+        // Checkbox handler
+        const checkbox = card.querySelector('.file-card-checkbox');
+        checkbox.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleFileSelection(file.name);
+        });
         
         card.querySelector('.preview-btn').addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2190,8 +2371,11 @@ function updateCodeFolder() {
           }
         });
         
-        card.addEventListener('click', () => {
-          showPreview(file.name, file.type, file.content);
+        card.addEventListener('click', (e) => {
+          // Don't open preview if clicking checkbox
+          if (!e.target.classList.contains('file-card-checkbox')) {
+            showPreview(file.name, file.type, file.content);
+          }
         });
         
         grid.appendChild(card);
@@ -2199,6 +2383,9 @@ function updateCodeFolder() {
     });
     // Update storage info
         updateStorageInfo();
+        
+    // Update selection UI
+    updateSelectionUI();
         
     appLog('Rendered', codeFiles.length, 'files in', Object.keys(fileGroups).length, 'folders');
   } catch (error) {
@@ -2541,6 +2728,21 @@ appLog(`• ${f.name} (${f.content.length} chars, ${f.content.split('\n').length
         showToast('Failed to download project', 'error');
     }
 });
+
+            // Bulk delete controls
+            getElement('select-all-btn')?.addEventListener('click', () => {
+                selectAllFiles();
+                showToast('All files selected', 'info');
+            });
+
+            getElement('deselect-all-btn')?.addEventListener('click', () => {
+                deselectAllFiles();
+                showToast('Selection cleared', 'info');
+            });
+
+            getElement('bulk-delete-btn')?.addEventListener('click', () => {
+                deleteSelectedFiles();
+            });
 
             // Upload ZIP
             getElement('zip-upload')?.addEventListener('change', handleZipUpload);
