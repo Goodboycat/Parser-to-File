@@ -1,0 +1,2883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes" />
+    <meta name="theme-color" content="#1a1a2e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Parser to File</title>
+    <script src="file:///android_asset/jszip.min.js"></script>
+    <style>
+        /* ===== CSS Variables ===== */
+        :root {
+            --primary-bg: #1a1a2e;
+            --secondary-bg: #0f3460;
+            --header-bg: #16213e;
+            --accent: #4cc9f0;
+            --accent-hover: #3ab4db;
+            --text-primary: #e6e6e6;
+            --text-secondary: #bfefff;
+            --error: #e94560;
+            --success: #4cf05c;
+            --warning: #f0a84c;
+            --border: rgba(76, 201, 240, 0.25);
+            --shadow: rgba(0, 0, 0, 0.3);
+            --overlay: rgba(0, 0, 0, 0.95);
+            
+            /* Touch targets */
+            --touch-min: 48px;
+            --button-padding: 0.75rem 1.2rem;
+            
+            /* Animation timing */
+            --anim-fast: 150ms;
+            --anim-medium: 250ms;
+            --anim-slow: 400ms;
+            
+            /* Z-index layers */
+            --z-content: 1;
+            --z-header: 10;
+            --z-sidebar: 50;
+            --z-modal: 100;
+            --z-toast: 200;
+            --z-bottom-nav: 90;
+        }
+
+        /* Reduced motion support */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* ===== Base Styles ===== */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html {
+            font-size: 16px;
+            -webkit-text-size-adjust: 100%;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--primary-bg);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+            touch-action: pan-x pan-y;
+            overscroll-behavior: none;
+        }
+
+        /* ===== Container Layout ===== */
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        /* ===== Header ===== */
+        header {
+            background: var(--header-bg);
+            padding: 1rem;
+            padding-top: max(1rem, env(safe-area-inset-top));
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px var(--shadow);
+            z-index: var(--z-header);
+            transition: transform var(--anim-medium) ease;
+        }
+
+        header.hidden {
+            transform: translateY(-100%);
+        }
+
+        .logo {
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 1.15rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .mobile-menu-btn {
+            display: block;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            min-width: var(--touch-min);
+            min-height: var(--touch-min);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            transition: background var(--anim-fast);
+        }
+
+        .mobile-menu-btn:active {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* ===== Main Content ===== */
+        .main-content {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            padding-bottom: 70px; /* Space for bottom nav */
+        }
+
+        /* ===== Sidebar (Mobile Bottom Sheet) ===== */
+        .sidebar {
+            position: fixed;
+            bottom: 70px;
+            left: 0;
+            right: 0;
+            height: 85vh;
+            background: var(--secondary-bg);
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -4px 20px var(--shadow);
+            transform: translateY(calc(100% + 70px));
+            transition: transform var(--anim-medium) cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: var(--z-sidebar);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar.open {
+            transform: translateY(0);
+        }
+
+        .sidebar-handle {
+            width: 40px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+            margin: 12px auto 8px;
+            cursor: grab;
+        }
+
+        .sidebar-handle:active {
+            cursor: grabbing;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* ===== Search Box ===== */
+        .search-box {
+            margin-bottom: 1rem;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            border: 2px solid var(--border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            font-size: 1rem;
+            min-height: var(--touch-min);
+            transition: all var(--anim-fast);
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        /* ===== Parser Container ===== */
+        .parser-container {
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+
+        .parser-container h3 {
+            color: var(--accent);
+            margin-bottom: 0.75rem;
+            font-size: 1.1rem;
+        }
+
+        .parser-info {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+            line-height: 1.5;
+        }
+
+        .parser-textarea {
+            width: 100%;
+            min-height: 150px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid var(--border);
+            color: var(--text-primary);
+            padding: 0.75rem;
+            border-radius: 12px;
+            resize: vertical;
+            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            transition: all var(--anim-fast);
+        }
+
+        .parser-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .parser-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .parser-instructions {
+            margin-top: 0.75rem;
+            font-style: italic;
+            color: var(--text-secondary);
+            padding: 0.75rem;
+            background: rgba(0, 0, 0, 0.18);
+            border-left: 3px solid var(--accent);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .parser-instructions code {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        /* ===== File Explorer ===== */
+        .file-explorer {
+            height: 100%;
+            padding: 1rem;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .path {
+            color: var(--accent);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            padding: 0.5rem 0;
+        }
+
+        .file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 1rem;
+            padding-bottom: 2rem;
+        }
+
+        /* ===== File Card ===== */
+        .file-card {
+            background: var(--secondary-bg);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            transition: all var(--anim-fast);
+            cursor: pointer;
+            user-select: none;
+            min-height: 120px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .file-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(76, 201, 240, 0.1), transparent);
+            opacity: 0;
+            transition: opacity var(--anim-fast);
+        }
+
+        .file-card:active::before {
+            opacity: 1;
+        }
+
+        .file-card-icon {
+            font-size: 2.5rem;
+            text-align: center;
+        }
+
+        .file-card-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            line-height: 1.4;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: auto;
+        }
+
+        .file-action-btn {
+            flex: 1;
+            padding: 0.6rem;
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            min-height: var(--touch-min);
+            transition: all var(--anim-fast);
+        }
+
+        .file-action-btn:active {
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(0.95);
+        }
+
+        /* ===== Empty State ===== */
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: rgba(255, 255, 255, 0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            opacity: 0.3;
+        }
+
+        .empty-state-text {
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+
+        /* ===== Bottom Navigation ===== */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--header-bg);
+            box-shadow: 0 -2px 10px var(--shadow);
+            z-index: var(--z-bottom-nav);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        .bottom-nav-items {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            height: 70px;
+            padding: 0 0.5rem;
+        }
+
+        .bottom-nav-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            padding: 0.5rem;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all var(--anim-fast);
+            color: rgba(255, 255, 255, 0.6);
+            min-height: var(--touch-min);
+            text-decoration: none;
+        }
+
+        .bottom-nav-item:active {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(0.95);
+        }
+
+        .bottom-nav-item.active {
+            color: var(--accent);
+        }
+
+        .bottom-nav-icon {
+            font-size: 1.5rem;
+        }
+
+        .bottom-nav-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        /* ===== Buttons ===== */
+        .btn {
+            padding: var(--button-padding);
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.9rem;
+            min-height: var(--touch-min);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            transition: all var(--anim-fast);
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #111;
+        }
+
+        .btn-primary:active {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:active {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-exit {
+            background: var(--error);
+            color: #fff;
+        }
+
+        .btn-web-preview {
+            background: #9d4cf0;
+            color: #fff;
+        }
+
+        .btn-download {
+            background: #f04c9d;
+            color: #fff;
+        }
+
+        .btn-upload {
+            background: #4cf0b3;
+            color: #111;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-upload input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .btn-save {
+            background: var(--success);
+            color: #111;
+        }
+
+        /* ===== Modals (Full Screen on Mobile) ===== */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--overlay);
+            display: none;
+            flex-direction: column;
+            z-index: var(--z-modal);
+            animation: fadeIn var(--anim-medium);
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            padding-top: max(1rem, env(safe-area-inset-top));
+            background: var(--header-bg);
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+
+        .modal-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .file-type-badge {
+            display: inline-block;
+            padding: 0.3rem 0.6rem;
+            background: var(--accent);
+            color: #111;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        
+        /* Special badge styling for special files */
+        .file-type-badge.special {
+            background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+            color: #1a1a2e;
+            box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+            font-weight: 800;
+        }
+        
+        .file-type-badge.special::before {
+            content: '⭐ ';
+        }
+
+        .modal-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .file-content {
+            white-space: pre-wrap;
+            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+            background: #2d2d2d;
+            padding: 1rem;
+            border-radius: 12px;
+            overflow: auto;
+            width: 100%;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .edit-textarea {
+            width: 100%;
+            height: 100%;
+            padding: 1rem;
+            border-radius: 12px;
+            background: #2d2d2d;
+            color: var(--text-primary);
+            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+            border: 2px solid var(--accent);
+            resize: none;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        .edit-textarea:focus {
+            outline: none;
+        }
+
+        .web-preview-frame {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: white;
+        }
+
+        /* ===== Toast Notifications ===== */
+        .toast-container {
+            position: fixed;
+            bottom: 90px;
+            left: 1rem;
+            right: 1rem;
+            z-index: var(--z-toast);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: var(--header-bg);
+            padding: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px var(--shadow);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            animation: slideUpToast var(--anim-medium) cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: auto;
+            min-height: var(--touch-min);
+        }
+
+        @keyframes slideUpToast {
+            from {
+                transform: translateY(100px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .toast-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .toast-message {
+            flex: 1;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--error);
+        }
+
+        .toast.info {
+            border-left: 4px solid var(--accent);
+        }
+
+        /* ===== Log Console ===== */
+        .log-container {
+            margin-top: 1rem;
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .log-header h3 {
+            color: var(--accent);
+            font-size: 1rem;
+        }
+
+        .log-console {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 0.75rem;
+            min-height: 100px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .log-line {
+            padding: 0.3rem 0;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+            word-break: break-word;
+        }
+
+        .log-controls {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        /* ===== Folder Tree ===== */
+        .folder-tree {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .folder, .file {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            border-radius: 12px;
+            cursor: pointer;
+            min-height: var(--touch-min);
+            transition: background var(--anim-fast);
+        }
+
+        .folder {
+            background: rgba(76, 201, 240, 0.08);
+        }
+
+        .folder:active {
+            background: rgba(76, 201, 240, 0.15);
+        }
+
+        .file {
+            background: rgba(233, 69, 96, 0.06);
+        }
+
+        .file:active {
+            background: rgba(233, 69, 96, 0.12);
+        }
+
+        .label {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            width: 100%;
+            user-select: none;
+        }
+
+        .folder-icon, .file-icon {
+            width: 24px;
+            text-align: center;
+            font-size: 1.2rem;
+        }
+
+        .name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .folder-contents {
+            margin-top: 0.5rem;
+            margin-left: 2rem;
+            padding-left: 1rem;
+            border-left: 2px dashed rgba(255, 255, 255, 0.1);
+            display: none;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .folder.open > .folder-contents {
+            display: flex;
+        }
+
+        /* ===== Project Actions ===== */
+        .project-actions {
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+
+        .project-actions h3 {
+            margin-bottom: 0.75rem;
+            color: var(--accent);
+            font-size: 1.1rem;
+        }
+
+        .project-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .project-buttons .btn {
+            flex: 1;
+            min-width: calc(50% - 0.25rem);
+        }
+
+        /* ===== Loading States ===== */
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 12px;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        /* ===== Responsive Design ===== */
+        @media (max-width: 480px) {
+            .file-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.75rem;
+            }
+
+            .btn {
+                font-size: 0.85rem;
+                padding: 0.7rem 1rem;
+            }
+
+            .parser-textarea {
+                min-height: 120px;
+            }
+
+            .modal-content {
+                padding: 0.75rem;
+            }
+
+            .file-content {
+                font-size: 0.8rem;
+                padding: 0.75rem;
+            }
+        }
+
+        @media (min-width: 768px) {
+            .mobile-menu-btn {
+                display: none;
+            }
+
+            .sidebar {
+                position: relative;
+                bottom: auto;
+                left: auto;
+                right: auto;
+                width: 320px;
+                height: 100%;
+                border-radius: 0;
+                transform: translateY(0);
+                box-shadow: 2px 0 10px var(--shadow);
+            }
+
+            .sidebar-handle {
+                display: none;
+            }
+
+            .main-content {
+                display: flex;
+                padding-bottom: 0;
+            }
+
+            .file-explorer {
+                flex: 1;
+            }
+
+            .bottom-nav {
+                display: none;
+            }
+
+            .toast-container {
+                bottom: 1rem;
+                left: auto;
+                right: 1rem;
+                max-width: 400px;
+            }
+
+            .file-grid {
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .sidebar {
+                width: 380px;
+            }
+
+            .file-grid {
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 1.5rem;
+            }
+        }
+
+        /* ===== Accessibility ===== */
+        :focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border-width: 0;
+        }
+
+        /* ===== Dark Mode Adjustments ===== */
+        @media (prefers-color-scheme: light) {
+            :root {
+                --primary-bg: #f5f5f5;
+                --secondary-bg: #ffffff;
+                --header-bg: #ffffff;
+                --text-primary: #1a1a2e;
+                --text-secondary: #555555;
+                --border: rgba(0, 0, 0, 0.15);
+                --shadow: rgba(0, 0, 0, 0.1);
+                --overlay: rgba(255, 255, 255, 0.98);
+            }
+
+            .file-content,
+            .edit-textarea {
+                background: #f8f8f8;
+                color: #1a1a2e;
+            }
+            .file-path {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+    opacity: 0.7;
+}
+
+.file-card {
+    position: relative;
+}
+
+.folder-tree {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.folder-contents {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.storage-management {
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+}
+
+.storage-management h3 {
+    margin-bottom: 0.75rem;
+    color: var(--accent);
+    font-size: 1.1rem;
+}
+
+.storage-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.storage-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.storage-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.storage-actions .btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+}
+
+/* ===== Bulk Delete Controls ===== */
+.bulk-delete-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    gap: 0.75rem;
+}
+
+.selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.selection-count {
+    background: var(--accent);
+    color: var(--bg);
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.bulk-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-select-all, .btn-deselect-all, .btn-bulk-delete {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.btn-select-all {
+    background: var(--accent);
+    color: var(--bg);
+}
+
+.btn-select-all:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+.btn-deselect-all {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text);
+}
+
+.btn-deselect-all:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-bulk-delete {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    color: white;
+}
+
+.btn-bulk-delete:hover {
+    background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+    transform: translateY(-1px);
+}
+
+.btn-bulk-delete:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* File card checkbox styling */
+.file-card-checkbox {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 10;
+    width: 24px;
+    height: 24px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.file-card.selected {
+    border: 2px solid var(--accent);
+    background: rgba(6, 182, 212, 0.1);
+    transform: scale(1.02);
+}
+
+.file-card {
+    position: relative;
+}
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header id="main-header">
+            <button class="mobile-menu-btn" id="menu-btn" aria-label="Toggle menu">
+                <span id="menu-icon">☰</span>
+            </button>
+            <div class="logo">
+                <span>📁</span>
+                <span>File Explorer</span>
+            </div>
+            <button class="btn btn-exit" id="exit-btn">Exit</button>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar (Bottom Sheet on Mobile) -->
+            <aside class="sidebar" id="sidebar" role="complementary">
+                <div class="sidebar-handle" id="sidebar-handle"></div>
+                <div class="sidebar-content">
+                    <!-- Search -->
+                    <div class="search-box">
+                        <input 
+                            type="text" 
+                            placeholder="🔍 Search files..." 
+                            id="search-input"
+                            aria-label="Search files"
+                        />
+                    </div>
+
+                    <!-- Parser -->
+                    <div class="parser-container">
+                        <h3>📝 Code Parser</h3>
+                        <div class="parser-info">
+                            Paste code blocks to create files automatically
+                        </div>
+                        <textarea 
+                            class="parser-textarea" 
+                            id="parser-textarea" 
+                            placeholder="Paste your code blocks here..."
+                            aria-label="Code parser input"
+                        ></textarea>
+                        <div class="parser-actions">
+                            <button class="btn btn-primary" id="parse-btn">
+                                ✨ Parse & Create
+                            </button>
+                            <button class="btn btn-secondary" id="clear-parser">
+                                🗑️ Clear
+                            </button>
+                        </div>
+                        <div class="parser-instructions">
+                            <strong>Format:</strong> Use <code>**filename.ext**</code> before <code>```code```</code><br>
+                            <strong>Example:</strong><br>
+                            <code>**index.html**</code><br>
+                            <code>```html</code><br>
+                            <code>&lt;html&gt;...&lt;/html&gt;</code><br>
+                            <code>```</code>
+                        </div>
+                    </div>
+
+                    <!-- Project Actions -->
+                    <div class="project-actions">
+                        <h3>🎯 Project Actions</h3>
+                        <div class="project-buttons">
+                            <button class="btn btn-web-preview" id="web-preview-btn">
+                                🌐 Preview
+                            </button>
+                            <button class="btn btn-download" id="download-btn">
+                                📥 Download
+                            </button>
+                            <button class="btn btn-upload" id="upload-btn">
+                                📤 Upload ZIP
+                                <input type="file" id="zip-upload" accept=".zip" aria-label="Upload ZIP file" />
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Folder Tree -->
+                    <div class="folder-tree" aria-label="Folder tree">
+                        <div class="folder open code-folder">
+                            <div class="label">
+                                <div class="folder-icon">📁</div>
+                                <div class="name">Code Files</div>
+                            </div>
+                            <div class="folder-contents" id="code-folder"></div>
+                        </div>
+                    </div>
+
+                    <!-- Log Console -->
+                    <div class="log-container">
+                        <div class="log-header">
+                            <h3>📊 Log Console</h3>
+                        </div>
+                        <div class="log-console" id="app-log" role="log" aria-live="polite"></div>
+                        <div class="log-controls">
+                            <button class="btn btn-secondary" id="clear-log">
+                                Clear
+                            </button>
+                            <button class="btn btn-secondary" id="copy-log">
+                                Copy
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- File Explorer -->
+            <main class="file-explorer" role="main">
+                <div class="path">📂 Home / Code</div>
+                
+                <!-- Bulk Delete Controls -->
+                <div class="bulk-delete-controls" id="bulk-delete-controls" style="display: none;">
+                    <div class="selection-info">
+                        <span>Selected:</span>
+                        <span class="selection-count" id="selection-count">0</span>
+                    </div>
+                    <div class="bulk-actions">
+                        <button class="btn-select-all" id="select-all-btn">✅ All</button>
+                        <button class="btn-deselect-all" id="deselect-all-btn">❌ None</button>
+                        <button class="btn-bulk-delete" id="bulk-delete-btn" disabled>🗑️ Delete</button>
+                    </div>
+                </div>
+                
+                <div class="file-grid" id="code-file-grid">
+                    <div class="empty-state" id="empty-state">
+                        <div class="empty-state-icon">📄</div>
+                        <div class="empty-state-text">
+                            No code files yet.<br>
+                            Use the parser to create files from code blocks.
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Bottom Navigation (Mobile Only) -->
+        <nav class="bottom-nav" role="navigation">
+            <div class="bottom-nav-items">
+                <button class="bottom-nav-item active" id="nav-files" aria-label="Files">
+                    <span class="bottom-nav-icon">📁</span>
+                    <span class="bottom-nav-label">Files</span>
+                </button>
+                <button class="bottom-nav-item" id="nav-menu" aria-label="Menu">
+                    <span class="bottom-nav-icon">☰</span>
+                    <span class="bottom-nav-label">Menu</span>
+                </button>
+                <button class="bottom-nav-item" id="nav-parse" aria-label="Parse">
+                    <span class="bottom-nav-icon">➕</span>
+                    <span class="bottom-nav-label">Parse</span>
+                </button>
+                <button class="bottom-nav-item" id="nav-actions" aria-label="Actions">
+                    <span class="bottom-nav-icon">⚙️</span>
+                    <span class="bottom-nav-label">Actions</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Toast Container -->
+        <div class="toast-container" id="toast-container" aria-live="polite"></div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div class="modal-overlay" id="preview-modal" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+        <div class="modal-header">
+            <div class="modal-title">
+                <span id="preview-title">File Preview</span>
+                <span class="file-type-badge" id="preview-file-type">code</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-primary" id="edit-btn" aria-label="Edit file">
+                    ✏️ Edit
+                </button>
+                <button class="btn btn-secondary" id="close-preview" aria-label="Close preview">
+                    ✕
+                </button>
+            </div>
+        </div>
+        <div class="modal-content">
+            <div id="preview-content" style="width:100%"></div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" id="edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+        <div class="modal-header">
+            <div class="modal-title">
+                <span id="edit-title">Editing File</span>
+                <span class="file-type-badge" id="edit-file-type">code</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-save" id="save-btn" aria-label="Save file">
+                    💾 Save
+                </button>
+                <button class="btn btn-secondary" id="cancel-edit" aria-label="Cancel edit">
+                    ✕
+                </button>
+            </div>
+        </div>
+        <div class="modal-content">
+            <textarea id="edit-textarea" class="edit-textarea" placeholder="Edit file content..." aria-label="File content editor"></textarea>
+        </div>
+    </div>
+
+    <!-- Web Preview Modal -->
+    <div class="modal-overlay" id="web-preview-modal" role="dialog" aria-modal="true">
+        <div class="modal-header">
+            <div class="modal-title">
+                <span>🌐 Web Preview</span>
+                <span class="file-type-badge">Live</span>
+            </div>
+            <button class="btn btn-secondary" id="close-web-preview" aria-label="Close web preview">
+                ✕
+            </button>
+        </div>
+        <div class="modal-content" style="padding: 0;">
+            <iframe 
+                id="web-preview-frame" 
+                class="web-preview-frame" 
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                title="Web preview"
+            ></iframe>
+        </div>
+    </div>
+<!-- Storage Management -->
+<div class="storage-management">
+  <h3>💾 Storage</h3>
+  <div class="storage-info">
+    <div class="storage-stats">
+      <span>Files: <strong id="file-count">0</strong></span>
+      <span>Size: <strong id="storage-size">0 KB</strong></span>
+    </div>
+    <div class="storage-actions">
+      <button class="btn btn-secondary" id="clear-storage">
+        🗑️ Clear
+      </button>
+      <button class="btn btn-secondary" id="storage-info">
+        ℹ️ Info
+      </button>
+    </div>
+  </div>
+</div>
+    <!-- JSZip Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <!-- Main App Script -->
+    <script>
+        // ===== Global State =====
+        let files = {};
+        let currentEditingFile = null;
+        let lastScrollPos = 0;
+
+        // ===== Utility Functions =====
+        function getElement(id) {
+            const element = document.getElementById(id);
+            if (!element) {
+                console.warn(`Element with id '${id}' not found`);
+            }
+            return element;
+        }
+
+        function escapeHtml(text) {
+            if (typeof text !== 'string') return '';
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        // Enhanced file type detection with special file category
+function getFileType(fileName) {
+    if (!fileName || typeof fileName !== 'string') return 'file';
+    
+    const lowerName = fileName.toLowerCase();
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    
+    // ===== SPECIAL FILES (Priority 1) =====
+    // Files without extensions or important project files
+    const specialFiles = [
+        'readme', 'license', 'changelog', 'contributing', 'authors',
+        'makefile', 'dockerfile', 'rakefile', 'gemfile', 'procfile',
+        'vagrantfile', 'gruntfile', 'gulpfile', 'webpack.config',
+        'manifest', 'notice', 'patents', 'version', 'history'
+    ];
+    
+    // Check for exact special file matches (case-insensitive, with or without extensions)
+    for (const special of specialFiles) {
+        if (lowerName === special || 
+            lowerName === `${special}.md` || 
+            lowerName === `${special}.txt` ||
+            lowerName === `${special}.rst` ||
+            lowerName.startsWith(`${special}.`)) {
+            return 'special';
+        }
+    }
+    
+    // ===== DOTFILES (Priority 2) =====
+    // Configuration files starting with dot
+    if (fileName.startsWith('.')) {
+        const configDotfiles = [
+            '.env', '.gitignore', '.dockerignore', '.npmignore',
+            '.eslintrc', '.prettierrc', '.babelrc', '.editorconfig',
+            '.gitattributes', '.npmrc', '.yarnrc', '.nvmrc'
+        ];
+        
+        // Check exact match or with extension
+        for (const dotfile of configDotfiles) {
+            if (lowerName === dotfile || lowerName.startsWith(dotfile + '.')) {
+                return 'special';
+            }
+        }
+        
+        // All other dotfiles are code
+        return 'code';
+    }
+    
+    // ===== CODE FILES (Priority 3) =====
+    const codeExts = [
+        'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'scss', 'sass', 'less',
+        'py', 'java', 'cpp', 'c', 'h', 'hpp', 'php', 'rb', 'go', 'rs',
+        'swift', 'kt', 'dart', 'scala', 'sh', 'bash', 'zsh', 'fish',
+        'json', 'xml', 'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf',
+        'md', 'txt', 'sql', 'graphql', 'proto', 'prisma'
+    ];
+    
+    // ===== IMAGE FILES (Priority 4) =====
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'bmp', 'webp', 'ico', 'tiff'];
+    
+    // ===== DOCUMENT FILES (Priority 5) =====
+    const documentExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+    
+    // Check extension-based types
+    if (codeExts.includes(ext)) return 'code';
+    if (imageExts.includes(ext)) return 'image';
+    if (documentExts.includes(ext)) return 'document';
+    
+    // Default fallback
+    return 'file';
+}
+
+        // Enhanced file icon function with special file support
+function getFileIcon(type, fileName = '') {
+    const icons = { 
+        code: '📝', 
+        image: '🖼️', 
+        file: '📄',
+        document: '📋',
+        special: '⭐'  // Default icon for special files
+    };
+    
+    // Special icons for specific file types
+    if (fileName) {
+        const lowerName = fileName.toLowerCase();
+        
+        // ===== SPECIAL FILES (highest priority) =====
+        const specialFileIcons = {
+            // Documentation
+            'readme': '📖', 'readme.md': '📖', 'readme.txt': '📖',
+            'license': '📜', 'license.md': '📜', 'license.txt': '📜',
+            'changelog': '📝', 'changelog.md': '📝', 'changes': '📝',
+            'contributing': '🤝', 'contributing.md': '🤝',
+            'authors': '✍️', 'authors.md': '✍️', 'contributors': '✍️',
+            'history': '📚', 'history.md': '📚',
+            
+            // Build & Config files
+            'makefile': '🔨', 'rakefile': '💎', 'gemfile': '💎',
+            'dockerfile': '🐳', 'docker-compose.yml': '🐳',
+            'procfile': '⚙️', 'vagrantfile': '📦',
+            'gruntfile': '🔧', 'gulpfile': '🌊',
+            'webpack.config.js': '📦', 'rollup.config.js': '📦',
+            
+            // Project files
+            'manifest': '📋', 'manifest.json': '📋',
+            'notice': '📢', 'patents': '⚖️', 'version': '🔢'
+        };
+        
+        if (specialFileIcons[lowerName]) {
+            return specialFileIcons[lowerName];
+        }
+        
+        // Check for partial matches (e.g., dockerfile.dev, makefile.linux)
+        for (const [key, icon] of Object.entries(specialFileIcons)) {
+            if (lowerName.startsWith(key) || lowerName.includes(key)) {
+                return icon;
+            }
+        }
+        
+        // ===== DOTFILES =====
+        if (fileName.startsWith('.')) {
+            const dotfileIcons = {
+                '.env': '🔐', '.env.local': '🔐', '.env.development': '🔐',
+                '.gitignore': '🚫', '.dockerignore': '🐳', '.npmignore': '📦',
+                '.eslintrc': '📏', '.eslintrc.js': '📏', '.eslintrc.json': '📏',
+                '.prettierrc': '💅', '.prettierrc.js': '💅',
+                '.babelrc': '🔄', '.editorconfig': '✏️',
+                '.gitattributes': '📌', '.npmrc': '📦', '.yarnrc': '🧶',
+                '.nvmrc': '🟢', '.ruby-version': '💎', '.python-version': '🐍'
+            };
+            
+            for (const [dotfile, icon] of Object.entries(dotfileIcons)) {
+                if (lowerName.startsWith(dotfile)) {
+                    return icon;
+                }
+            }
+            return '⚙️'; // Default icon for other dotfiles
+        }
+        
+        // ===== EXTENSION-BASED ICONS =====
+        const ext = (fileName.split('.').pop() || '').toLowerCase();
+        const extensionIcons = {
+            // JavaScript/TypeScript
+            'js': '📜', 'ts': '🔷', 'jsx': '⚛️', 'tsx': '🔶',
+            
+            // Web
+            'html': '🌐', 'css': '🎨', 'scss': '💅', 'sass': '💅', 'less': '🎨',
+            
+            // Data formats
+            'json': '📋', 'xml': '📰', 'yml': '📊', 'yaml': '📊', 'toml': '📋',
+            
+            // Documentation
+            'md': '📝', 'txt': '📄', 'rst': '📖',
+            
+            // Programming languages
+            'py': '🐍', 'java': '☕', 'cpp': '⚙️', 'c': '⚙️', 'h': '⚙️',
+            'php': '🐘', 'rb': '💎', 'go': '🐹', 'rs': '🦀',
+            'swift': '🐦', 'kt': '🎯', 'dart': '🎯', 'scala': '📈',
+            
+            // Shell
+            'sh': '🐚', 'bash': '🐚', 'zsh': '🐚', 'fish': '🐠',
+            
+            // Database
+            'sql': '🗄️', 'prisma': '💎', 'graphql': '📊',
+            
+            // Documents
+            'pdf': '📕', 'doc': '📘', 'docx': '📘',
+            'xls': '📗', 'xlsx': '📗', 'ppt': '📙', 'pptx': '📙',
+            
+            // Images
+            'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️',
+            'svg': '🎨', 'ico': '🖼️', 'bmp': '🖼️', 'webp': '🖼️'
+        };
+        
+        if (extensionIcons[ext]) {
+            return extensionIcons[ext];
+        }
+    }
+    
+    return icons[type] || '📄';
+}
+
+        // ===== Toast Notifications =====
+        function showToast(message, type = 'info') {
+            const container = getElement('toast-container');
+            if (!container) return;
+
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+            const icon = icons[type] || 'ℹ️';
+            
+            toast.innerHTML = `
+                <span class="toast-icon">${icon}</span>
+                <span class="toast-message">${escapeHtml(message)}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Haptic feedback on mobile
+            if (navigator.vibrate) {
+                const patterns = { success: [50], error: [100, 50, 100], info: [30] };
+                navigator.vibrate(patterns[type] || [30]);
+            }
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+            
+            appLog(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        // ===== Logging =====
+        function appLog(...args) {
+            try {
+                const time = new Date().toLocaleTimeString();
+                const text = args.map(a => {
+                    if (typeof a === 'object') { 
+                        try { return JSON.stringify(a); } 
+                        catch (e) { return String(a); } 
+                    }
+                    return String(a);
+                }).join(' ');
+                
+                console.log('[APP]', text);
+                
+                const logDiv = getElement('app-log');
+                if (!logDiv) return;
+                
+                const line = document.createElement('div');
+                line.className = 'log-line';
+                line.textContent = `${time}  ${text}`;
+                logDiv.appendChild(line);
+                logDiv.scrollTop = logDiv.scrollHeight;
+            } catch (error) {
+                console.error('Error in appLog:', error);
+            }
+        }
+
+        // ===== Enhanced Storage Functions =====
+function saveFilesToLocalStorage() {
+  try {
+    // Convert files object to array and compress large files
+    const filesArray = Object.values(files).map(file => {
+      // Truncate very large files to prevent quota issues
+      if (file.content && file.content.length > 100000) { // 100KB limit
+        appLog(`Truncating large file: ${file.name} from ${file.content.length} to 100000 chars`);
+        return {
+          ...file,
+          content: file.content.substring(0, 100000) + '\n// ... [FILE TRUNCATED DUE TO SIZE]'
+        };
+      }
+      return file;
+    });
+    
+    const storageData = {
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      fileCount: filesArray.length,
+      files: filesArray
+    };
+    
+    // Try to save with compression for large datasets
+    const dataString = JSON.stringify(storageData);
+    
+    if (dataString.length > 4000000) { // 4MB rough limit
+      appLog('Data too large, saving only essential files...');
+      // Keep only the most important files
+      const essentialFiles = filesArray.filter(file =>
+        file.name.includes('package.json') ||
+        file.name.includes('index.') ||
+        file.name.includes('App.') ||
+        file.name.length < 100 // small files
+      ).slice(0, 20); // max 20 files
+      
+      const essentialData = {
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        fileCount: essentialFiles.length,
+        files: essentialFiles
+      };
+      
+      localStorage.setItem('fileExplorerFiles', JSON.stringify(essentialData));
+      appLog(`Saved ${essentialFiles.length} essential files due to size limits`);
+    } else {
+      localStorage.setItem('fileExplorerFiles', dataString);
+      appLog(`Files saved to localStorage: ${filesArray.length} files, ${dataString.length} bytes`);
+    }
+    
+    return true;
+  } catch (error) {
+    appLog('Error saving to localStorage:', error.message);
+    
+    // Try alternative: Save to sessionStorage
+    try {
+      const essentialFiles = Object.values(files)
+        .filter(file => file.name.includes('package.json') || file.name.includes('index.'))
+        .slice(0, 10);
+      
+      sessionStorage.setItem('fileExplorerFiles', JSON.stringify({
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        files: essentialFiles
+      }));
+      appLog('Saved essential files to sessionStorage as fallback');
+    } catch (fallbackError) {
+      appLog('Failed to save to sessionStorage too:', fallbackError.message);
+    }
+    
+    showToast('Failed to save files - storage limit reached', 'error');
+    return false;
+  }
+}
+
+function loadFilesFromLocalStorage() {
+  try {
+    // Try localStorage first
+    let stored = localStorage.getItem('fileExplorerFiles');
+    let source = 'localStorage';
+    
+    // Fallback to sessionStorage
+    if (!stored) {
+      stored = sessionStorage.getItem('fileExplorerFiles');
+      source = 'sessionStorage';
+    }
+    
+    if (stored) {
+      const data = JSON.parse(stored);
+      
+      // Handle both old format (just files object) and new format (with metadata)
+      if (data.files && Array.isArray(data.files)) {
+        // New format with metadata
+        files = {};
+        data.files.forEach(file => {
+          if (file.name && file.content) {
+            files[file.name] = file;
+          }
+        });
+        appLog(`Files loaded from ${source}: ${data.files.length} files`);
+      } else {
+        // Old format (direct files object)
+        files = data;
+        appLog(`Files loaded from ${source} (legacy format): ${Object.keys(files).length} files`);
+      }
+      
+      updateCodeFolder();
+      return true;
+    }
+    return false;
+  } catch (error) {
+    appLog('Error loading from storage:', error.message);
+    
+    // Clear corrupted data
+    try {
+      localStorage.removeItem('fileExplorerFiles');
+      sessionStorage.removeItem('fileExplorerFiles');
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    
+    files = {};
+    return false;
+  }
+}
+
+// ===== Enhanced Parser Functions =====
+function parseCodeBlocks(text) {
+    try {
+        if (!text || typeof text !== 'string') {
+            appLog('Parser error: Invalid input text');
+            return [];
+        }
+
+        appLog('Starting multi-format parsing...');
+        
+        // Try environment files first (dotfiles)
+        let parsed = parseEnvironmentFiles(text);
+        
+        // If no environment files found, try simple format
+        if (parsed.length === 0) {
+            parsed = parseSimpleFormat(text);
+        }
+        
+        // If that fails, try markdown parsing
+        if (parsed.length === 0) {
+            parsed = parseMarkdownCodeBlocks(text);
+        }
+        
+        // If still nothing, try aggressive extraction
+        if (parsed.length === 0) {
+            parsed = parseAggressive(text);
+        }
+        
+        appLog(`Total files parsed: ${parsed.length}`);
+        return parsed;
+    } catch (error) {
+        appLog('Main parser error:', error.message);
+        return [];
+    }
+}
+
+function parseMarkdownCodeBlocks(text) {
+    try {
+        if (!text || typeof text !== 'string') {
+            appLog('Parser error: Invalid input text');
+            return [];
+        }
+
+        appLog('Parsing markdown-style code blocks...');
+        const out = [];
+        const lines = text.split('\n');
+        let currentFile = null;
+        let inCodeBlock = false;
+        let codeBlockContent = [];
+        let codeBlockLanguage = '';
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Look for code block start ```
+            const codeStartMatch = line.match(/^\s*'```'(\w*)/);
+            if (codeStartMatch) {
+                if (!inCodeBlock) {
+                    // Starting a code block - check if previous line was a filename
+                    inCodeBlock = true;
+                    codeBlockLanguage = codeStartMatch[1] || '';
+                    codeBlockContent = [];
+                    
+                    // Look backwards for filename (skip empty lines)
+                    for (let j = i - 1; j >= 0; j--) {
+                        const prevLine = lines[j].trim();
+                        if (prevLine && !prevLine.startsWith('```')) {
+                            // Check if this looks like a filename
+                            if (isFileName(prevLine)) {
+                                currentFile = prevLine;
+                                appLog(`Found file: ${currentFile} with language: ${codeBlockLanguage}`);
+                            }
+                            break;
+                        }
+                    }
+                } else {
+                    // Ending a code block
+                    inCodeBlock = false;
+                    if (currentFile && codeBlockContent.length > 0) {
+                        out.push({
+                            name: currentFile,
+                            type: getFileType(currentFile),
+                            content: codeBlockContent.join('\n').trim()
+                        });
+                        appLog(`Added file: ${currentFile} (${codeBlockContent.length} lines)`);
+                    }
+                    currentFile = null;
+                    codeBlockContent = [];
+                }
+                continue;
+            }
+
+            // If we're in a code block, collect content
+            if (inCodeBlock && currentFile) {
+                codeBlockContent.push(line);
+            }
+        }
+
+        appLog(`Markdown parser found: ${out.length} files`);
+        return out;
+    } catch (error) {
+        appLog('Markdown parser error:', error.message);
+        return [];
+    }
+}
+
+function isFileName(line) {
+    // Check if line looks like a filename with extension
+    const filenamePattern = /^[a-zA-Z0-9_\-\.\/]+\.([a-zA-Z0-9]+)$/;
+    const dotfilePattern = /^\.[a-zA-Z0-9_\-\.]+$/; // Files starting with dot
+    const pathPattern = /^[a-zA-Z0-9_\-\.\/]+\/[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+$/;
+    
+    const commonExtensions = ['json', 'ts', 'js', 'html', 'css', 'yml', 'yaml', 'md', 'txt', 'Dockerfile', 'gitignore', 'env', 'prisma'];
+    const commonDotfiles = ['.env', '.gitignore', '.prisma', '.dockerignore', '.eslintrc', '.prettierrc'];
+    
+    // Check for common dotfiles
+    if (commonDotfiles.includes(line)) {
+        return true;
+    }
+    
+    // Check for dotfile pattern
+    if (dotfilePattern.test(line)) {
+        return true;
+    }
+    
+    const match = line.match(filenamePattern);
+    if (match) {
+        const ext = match[1].toLowerCase();
+        return commonExtensions.includes(ext) || ext.length <= 5;
+    }
+    
+    // Check for file paths
+    return pathPattern.test(line);
+}
+
+function parseEnvironmentFiles(text) {
+    try {
+        appLog('Parsing environment and configuration files...');
+        const out = [];
+        
+        // Look for sections that mention environment files
+        const envSectionRegex = /Environment\s*&\s*Configuration\s*Files[\s\S]*?(?=##|\d+\.|\*\*|\n\s*\n\s*\n|$)/i;
+        const envSection = text.match(envSectionRegex);
+        
+        if (envSection) {
+            appLog('Found environment section, parsing dotfiles...');
+            const envText = envSection[0];
+            
+            // Look for dotfile patterns in this section
+            const dotfilePattern = /([\.a-zA-Z0-9_\-]+)\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
+            let match;
+            
+            while ((match = dotfilePattern.exec(envText)) !== null) {
+                const name = match[1].trim();
+                const content = match[2].trim();
+                
+                if (name.startsWith('.') && content.length > 5) {
+                    out.push({
+                        name: name,
+                        type: getFileType(name),
+                        content: content
+                    });
+                    appLog(`Environment file found: ${name}`);
+                }
+            }
+        }
+        
+        return out;
+    } catch (error) {
+        appLog('Environment parser error:', error.message);
+        return [];
+    }
+}
+
+function parseSimpleFormat(text) {
+    try {
+        appLog('Parsing simple filename + code block format...');
+        const out = [];
+        
+        // Pattern 1: Files with extensions (standard format)
+        const pattern = /([a-zA-Z0-9_\-\.\/]*\.[a-zA-Z0-9_\-\.]+)\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
+        
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+            const name = match[1].trim();
+            let content = match[2].trim();
+            
+            if (name && content && content.length > 5) {
+                out.push({
+                    name: name,
+                    type: getFileType(name),
+                    content: content
+                });
+                appLog(`✓ Simple format: ${name}`);
+            }
+        }
+        
+        // Pattern 2: Dotfiles (starting with .)
+        const dotfilePattern = /([\.a-zA-Z0-9_\-]+)\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
+        let dotfileMatch;
+        while ((dotfileMatch = dotfilePattern.exec(text)) !== null) {
+            const name = dotfileMatch[1].trim();
+            const content = dotfileMatch[2].trim();
+            
+            if (name.startsWith('.') && content.length > 5 && !out.some(f => f.name === name)) {
+                out.push({
+                    name: name,
+                    type: getFileType(name),
+                    content: content
+                });
+                appLog(`✓ Dotfile: ${name}`);
+            }
+        }
+        
+        // Pattern 3: Special files WITHOUT extensions (README, Makefile, Dockerfile, etc.)
+        // More flexible pattern to catch files mentioned on their own line before code block
+        const specialFilePattern = /(^|\n)(README|LICENSE|CHANGELOG|CONTRIBUTING|AUTHORS|NOTICE|PATENTS|HISTORY|Makefile|Dockerfile|Rakefile|Gemfile|Procfile|Vagrantfile|Gruntfile|Gulpfile)(\.[a-zA-Z]+)?\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/gi;
+        
+        let specialMatch;
+        while ((specialMatch = specialFilePattern.exec(text)) !== null) {
+            const baseName = specialMatch[2]; // The special file name (README, Makefile, etc.)
+            const extension = specialMatch[3] || ''; // Optional extension (.md, .txt, etc.)
+            const name = baseName + extension;
+            const content = specialMatch[4].trim();
+            
+            if (content.length > 5 && !out.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+                out.push({
+                    name: name,
+                    type: getFileType(name),
+                    content: content
+                });
+                appLog(`✓ Special file: ${name}`);
+            }
+        }
+        
+        // Pattern 4: Aggressive special file detection (case-insensitive word followed by code block)
+        const aggressiveSpecialPattern = /(^|\n)([A-Z][a-zA-Z]*(?:file|FILE)?)\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
+        
+        let aggressiveMatch;
+        while ((aggressiveMatch = aggressiveSpecialPattern.exec(text)) !== null) {
+            const name = aggressiveMatch[2].trim();
+            const content = aggressiveMatch[3].trim();
+            
+            // Check if it's a known special file
+            const specialNames = [
+                'readme', 'license', 'changelog', 'contributing', 'authors',
+                'makefile', 'dockerfile', 'rakefile', 'gemfile', 'procfile',
+                'vagrantfile', 'gruntfile', 'gulpfile', 'manifest', 'notice'
+            ];
+            
+            if (specialNames.includes(name.toLowerCase()) && 
+                content.length > 5 && 
+                !out.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+                out.push({
+                    name: name,
+                    type: getFileType(name),
+                    content: content
+                });
+                appLog(`✓ Aggressive special file: ${name}`);
+            }
+        }
+        
+        appLog(`Simple parser found: ${out.length} files`);
+        return out;
+    } catch (error) {
+        appLog('Simple parser error:', error.message);
+        return [];
+    }
+}
+
+function parseAggressive(text) {
+    try {
+        appLog('Trying aggressive parsing...');
+        const out = [];
+        
+        // Split by code blocks and look for filenames before each
+        const codeBlocks = text.split(/'```'/);
+        
+        for (let i = 0; i < codeBlocks.length; i++) {
+            if (i % 2 === 1) { // We're in a code block (odd indices)
+                const codeContent = codeBlocks[i];
+                // Look at the text before this code block for a filename
+                const beforeBlock = codeBlocks[i - 1];
+                
+                if (beforeBlock) {
+                    // Split by lines and look for the last non-empty line
+                    const lines = beforeBlock.split('\n').filter(line => line.trim());
+                    if (lines.length > 0) {
+                        const lastLine = lines[lines.length - 1].trim();
+                        if (isFileName(lastLine)) {
+                            out.push({
+                                name: lastLine,
+                                type: getFileType(lastLine),
+                                content: codeContent.replace(/^\w*\s*\n?/, '').trim() // Remove language specifier
+                            });
+                            appLog(`Aggressive found: ${lastLine}`);
+                        }
+                    }
+                }
+            }
+        }
+        
+        appLog(`Aggressive parser found: ${out.length} files`);
+        return out;
+    } catch (error) {
+        appLog('Aggressive parser error:', error.message);
+        return [];
+    }
+}
+
+        // ===== Modal Functions =====
+        function showPreview(fileName, fileType, content) {
+            const modal = getElement('preview-modal');
+            const title = getElement('preview-title');
+            const badge = getElement('preview-file-type');
+            const contentDiv = getElement('preview-content');
+
+            if (!modal || !title || !badge || !contentDiv) return;
+
+            try {
+                title.textContent = fileName || 'Unknown File';
+                badge.textContent = fileType || 'file';
+                
+                // Add special class for special files
+                badge.className = 'file-type-badge';
+                if (fileType === 'special') {
+                    badge.classList.add('special');
+                }
+                
+                if (fileType === 'code' || fileType === 'special') {
+                    contentDiv.innerHTML = `<div class="file-content">${escapeHtml(content || '')}</div>`;
+                } else {
+                    contentDiv.innerHTML = `<div style="text-align:center;padding:2rem;">
+                        <div style="font-size:4rem;">${getFileIcon(fileType, fileName)}</div>
+                        <h2>${escapeHtml(fileName || 'Unknown File')}</h2>
+                        <p>Type: ${fileType || 'file'}</p>
+                    </div>`;
+                }
+                
+                currentEditingFile = fileName;
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+                appLog('Opened preview for', fileName);
+            } catch (error) {
+                appLog('Error showing preview:', error.message);
+                showToast('Failed to open preview', 'error');
+            }
+        }
+
+        function showEdit(fileName, fileType, content) {
+            const modal = getElement('edit-modal');
+            const title = getElement('edit-title');
+            const badge = getElement('edit-file-type');
+            const textarea = getElement('edit-textarea');
+
+            if (!modal || !title || !badge || !textarea) return;
+
+            try {
+                title.textContent = fileName || 'Unknown File';
+                badge.textContent = fileType || 'file';
+                
+                // Add special class for special files
+                badge.className = 'file-type-badge';
+                if (fileType === 'special') {
+                    badge.classList.add('special');
+                }
+                
+                textarea.value = content || '';
+                currentEditingFile = fileName;
+                
+                getElement('preview-modal').classList.remove('active');
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+                
+                setTimeout(() => textarea.focus(), 100);
+                appLog('Editing file', fileName);
+            } catch (error) {
+                appLog('Error showing edit:', error.message);
+                showToast('Failed to open editor', 'error');
+            }
+        }
+
+        function showWebPreview() {
+            const modal = getElement('web-preview-modal');
+            const frame = getElement('web-preview-frame');
+
+            if (!modal || !frame) return;
+
+            try {
+                const codeFiles = Object.values(files).filter(f => f && f.type === 'code');
+                if (codeFiles.length === 0) {
+                    showToast('No code files to preview', 'info');
+                    return;
+                }
+
+                const indexKey = Object.keys(files).find(k => k && k.toLowerCase() === 'index.html');
+                if (!indexKey) {
+                    showToast('No index.html found. Web preview requires index.html.', 'error');
+                    return;
+                }
+
+                let htmlContent = files[indexKey]?.content || '';
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlContent, 'text/html');
+
+                const cssFiles = codeFiles.filter(f => f.name.toLowerCase().endsWith('.css'));
+                cssFiles.forEach(cssFile => {
+                    const style = doc.createElement('style');
+                    style.textContent = cssFile.content || '';
+                    doc.head.appendChild(style);
+                });
+
+                const jsFiles = codeFiles.filter(f => f.name.toLowerCase().endsWith('.js'));
+                jsFiles.forEach(jsFile => {
+                    const script = doc.createElement('script');
+                    script.textContent = jsFile.content || '';
+                    doc.body.appendChild(script);
+                });
+
+                const finalHtml = doc.documentElement.outerHTML;
+                frame.srcdoc = finalHtml;
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+                appLog('Web preview opened');
+                showToast('Web preview loaded', 'success');
+            } catch (error) {
+                appLog('Error in web preview:', error.message);
+                showToast('Failed to load web preview', 'error');
+            }
+        }
+
+// Selection state management
+let selectedFiles = new Set();
+
+function updateSelectionUI() {
+  const count = selectedFiles.size;
+  const countEl = getElement('selection-count');
+  const bulkDeleteBtn = getElement('bulk-delete-btn');
+  const controlsEl = getElement('bulk-delete-controls');
+  
+  if (countEl) countEl.textContent = count;
+  if (bulkDeleteBtn) bulkDeleteBtn.disabled = count === 0;
+  
+  // Show/hide controls based on whether files exist
+  const totalFiles = Object.values(files).filter(f => f && f.type).length;
+  if (controlsEl) {
+    controlsEl.style.display = totalFiles > 0 ? 'flex' : 'none';
+  }
+}
+
+function toggleFileSelection(fileName) {
+  if (selectedFiles.has(fileName)) {
+    selectedFiles.delete(fileName);
+  } else {
+    selectedFiles.add(fileName);
+  }
+  updateSelectionUI();
+  updateCodeFolder();
+}
+
+function selectAllFiles() {
+  const allFiles = Object.values(files).filter(f => f && f.type);
+  allFiles.forEach(file => selectedFiles.add(file.name));
+  updateSelectionUI();
+  updateCodeFolder();
+}
+
+function deselectAllFiles() {
+  selectedFiles.clear();
+  updateSelectionUI();
+  updateCodeFolder();
+}
+
+function deleteSelectedFiles() {
+  const count = selectedFiles.size;
+  if (count === 0) return;
+  
+  if (confirm(`Delete ${count} selected file${count > 1 ? 's' : ''}?`)) {
+    selectedFiles.forEach(fileName => {
+      delete files[fileName];
+    });
+    selectedFiles.clear();
+    saveFilesToLocalStorage();
+    updateCodeFolder();
+    showToast(`Deleted ${count} file${count > 1 ? 's' : ''}`, 'success');
+  }
+}
+
+// Enhanced file display with better organization
+function updateCodeFolder() {
+  const grid = getElement('code-file-grid');
+  const folder = getElement('code-folder');
+  
+  if (!grid || !folder) return;
+  
+  try {
+    grid.innerHTML = '';
+    folder.innerHTML = '';
+    
+    // Show ALL file types: code, special, image, document (not just code)
+    const codeFiles = Object.values(files).filter(f => f && f.type);
+    
+    if (codeFiles.length === 0) {
+      grid.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📄</div>
+                    <div class="empty-state-text">
+                        No files yet.<br>
+                        Use the parser to create files from code blocks.
+                    </div>
+                </div>
+            `;
+      appLog('No files present');
+      return;
+    }
+    
+    // Group files by folder
+    const fileGroups = {};
+    codeFiles.forEach(file => {
+      if (!file.name) return;
+      
+      const pathParts = file.name.split('/');
+      let folderName = 'Root';
+      
+      if (pathParts.length > 1) {
+        folderName = pathParts.slice(0, -1).join('/');
+      }
+      
+      if (!fileGroups[folderName]) {
+        fileGroups[folderName] = [];
+      }
+      fileGroups[folderName].push(file);
+    });
+    
+    // Create folder structure
+    Object.keys(fileGroups).sort().forEach(folderName => {
+      const folderFiles = fileGroups[folderName];
+      
+      // Create folder element for tree view
+      if (folderName !== 'Root') {
+        const folderEl = document.createElement('div');
+        folderEl.className = 'folder';
+        folderEl.innerHTML = `
+                    <div class="label">
+                        <div class="folder-icon">📁</div>
+                        <div class="name">${escapeHtml(folderName)}</div>
+                    </div>
+                    <div class="folder-contents"></div>
+                `;
+        
+        folderFiles.forEach(file => {
+          const fileEl = document.createElement('div');
+          fileEl.className = 'file';
+          fileEl.innerHTML = `
+                        <div class="label">
+                            <div class="file-icon">${getFileIcon(file.type, file.name)}</div>
+                            <div class="name">${escapeHtml(file.name.split('/').pop())}</div>
+                        </div>
+                    `;
+          fileEl.addEventListener('click', () => {
+            showPreview(file.name, file.type, file.content);
+          });
+          folderEl.querySelector('.folder-contents').appendChild(fileEl);
+        });
+        
+        folder.appendChild(folderEl);
+        
+        // Toggle folder on click
+        folderEl.querySelector('.label').addEventListener('click', () => {
+          folderEl.classList.toggle('open');
+        });
+      }
+      
+      // Create grid cards (only for Root files or all files in grid view)
+      folderFiles.forEach(file => {
+        const displayName = folderName === 'Root' ? file.name : file.name.split('/').pop();
+        const isSelected = selectedFiles.has(file.name);
+        
+        const card = document.createElement('div');
+        card.className = `file-card ${isSelected ? 'selected' : ''}`;
+        card.innerHTML = `
+                    <input type="checkbox" class="file-card-checkbox" ${isSelected ? 'checked' : ''} />
+                    <div class="file-card-icon">${getFileIcon(file.type, file.name)}</div>
+                    <div class="file-card-name">${escapeHtml(displayName)}</div>
+                    ${folderName !== 'Root' ? `<div class="file-path">${escapeHtml(folderName)}/</div>` : ''}
+                    <div class="file-actions">
+                        <button class="file-action-btn preview-btn">👁️ View</button>
+                        <button class="file-action-btn edit-btn">✏️ Edit</button>
+                        <button class="file-action-btn delete-btn">🗑️ Del</button>
+                    </div>
+                `;
+        
+        // Checkbox handler
+        const checkbox = card.querySelector('.file-card-checkbox');
+        checkbox.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleFileSelection(file.name);
+        });
+        
+        card.querySelector('.preview-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          showPreview(file.name, file.type, file.content);
+        });
+        
+        card.querySelector('.edit-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          showEdit(file.name, file.type, file.content);
+        });
+        
+        card.querySelector('.delete-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (confirm(`Delete ${file.name}?`)) {
+            delete files[file.name];
+            saveFilesToLocalStorage();
+            updateCodeFolder();
+            showToast(`Deleted ${file.name}`, 'success');
+          }
+        });
+        
+        card.addEventListener('click', (e) => {
+          // Don't open preview if clicking checkbox
+          if (!e.target.classList.contains('file-card-checkbox')) {
+            showPreview(file.name, file.type, file.content);
+          }
+        });
+        
+        grid.appendChild(card);
+      });
+    });
+    // Update storage info
+        updateStorageInfo();
+        
+    // Update selection UI
+    updateSelectionUI();
+        
+    appLog('Rendered', codeFiles.length, 'files in', Object.keys(fileGroups).length, 'folders');
+  } catch (error) {
+    appLog('Error updating code folder:', error.message);
+    showToast('Failed to update file list', 'error');
+  }
+}
+
+function clearStorage() {
+    try {
+        localStorage.removeItem('fileExplorerFiles');
+        sessionStorage.removeItem('fileExplorerFiles');
+        files = {};
+        updateCodeFolder();
+        appLog('Storage cleared successfully');
+        showToast('Storage cleared', 'success');
+        return true;
+    } catch (error) {
+        appLog('Error clearing storage:', error.message);
+        showToast('Failed to clear storage', 'error');
+        return false;
+    }
+}
+
+function getStorageInfo() {
+    try {
+        const lsData = localStorage.getItem('fileExplorerFiles');
+        const ssData = sessionStorage.getItem('fileExplorerFiles');
+        
+        const info = {
+            localStorage: lsData ? `${(lsData.length / 1024).toFixed(2)} KB` : 'Empty',
+            sessionStorage: ssData ? `${(ssData.length / 1024).toFixed(2)} KB` : 'Empty',
+            fileCount: Object.keys(files).length,
+            totalSize: JSON.stringify(files).length
+        };
+        
+        appLog('Storage info:', info);
+        return info;
+    } catch (error) {
+        return { error: error.message };
+    }
+}
+
+function updateStorageInfo() {
+  const fileCount = Object.keys(files).length;
+  const totalSize = JSON.stringify(files).length;
+  
+  const fileCountEl = getElement('file-count');
+  const storageSizeEl = getElement('storage-size');
+  
+  if (fileCountEl) fileCountEl.textContent = fileCount;
+  if (storageSizeEl) storageSizeEl.textContent = `${(totalSize / 1024).toFixed(1)} KB`;
+}
+
+        // ==== ZIP Upload =====
+        function handleZipUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!file.name.endsWith('.zip')) {
+                showToast('Please select a ZIP file', 'error');
+                return;
+            }
+
+            appLog('Processing ZIP file:', file.name);
+            showToast('Extracting ZIP file...', 'info');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    JSZip.loadAsync(e.target.result).then(function(zip) {
+                        appLog('ZIP loaded, extracting files...');
+                        let extractedCount = 0;
+                        const totalFiles = Object.keys(zip.files).filter(f => 
+                            !zip.files[f].dir && 
+                            !f.includes('__MACOSX/') && 
+                            !f.includes('.DS_Store') &&
+                            !f.startsWith('.')
+                        ).length;
+
+                        if (totalFiles === 0) {
+                            showToast('No valid files found in ZIP', 'error');
+                            return;
+                        }
+
+                        zip.forEach(function(relativePath, zipEntry) {
+                            if (!zipEntry.dir) {
+                                if (relativePath.includes('__MACOSX/') || 
+                                    relativePath.includes('.DS_Store') ||
+                                    relativePath.startsWith('.')) {
+                                    return;
+                                }
+
+                                const pathParts = relativePath.split('/');
+                                const fileName = pathParts[pathParts.length - 1];
+
+                                if (fileName && fileName.includes('.') && !fileName.startsWith('.')) {
+                                    zipEntry.async('string').then(function(content) {
+                                        files[fileName] = {
+                                            name: fileName,
+                                            type: getFileType(fileName),
+                                            content: content
+                                        };
+                                        extractedCount++;
+
+                                        if (extractedCount === totalFiles) {
+                                            saveFilesToLocalStorage();
+                                            updateCodeFolder();
+                                            showToast(`Extracted ${extractedCount} files`, 'success');
+                                        }
+                                    });
+                                }
+                            }
+                        });
+
+                        event.target.value = '';
+                    }).catch(function(err) {
+                        appLog('Error loading ZIP:', err);
+                        showToast('Failed to load ZIP file', 'error');
+                    });
+                } catch (error) {
+                    appLog('Error processing ZIP file:', error.message);
+                    showToast('Failed to process ZIP file', 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+// Debug function to test patterns
+function debugParser(text) {
+  appLog('=== PARSER DEBUG ===');
+  
+  // Test different patterns
+  const patterns = [
+    { name: 'File declarations', regex: /\*\*\s*([a-zA-Z0-9_\/\-\.]+\.[a-zA-Z0-9]+)\s*\*\*/g },
+    { name: 'Numbered sections', regex: /\d+\.\s*[^\n]+\n+\*\*\s*([^\s*]+\.[a-zA-Z0-9]+)\s*\*\*/g },
+    { name: 'Code blocks', regex: /```[a-zA-Z]*\s*\n([\s\S]*?)\n\s*```/g }
+  ];
+  
+  patterns.forEach(pattern => {
+    const matches = [...text.matchAll(pattern.regex)];
+    appLog(`${pattern.name}: ${matches.length} matches`);
+    matches.slice(0, 5).forEach(match => {
+      appLog(`  - ${match[1] || match[0].substring(0, 50)}`);
+    });
+  });
+  
+  appLog('=== END DEBUG ===');
+}
+
+        // ===== Event Handlers =====
+        function setupEventListeners() {
+            // Menu toggle
+            const menuBtn = getElement('menu-btn');
+            const sidebar = getElement('sidebar');
+            const navMenu = getElement('nav-menu');
+
+            function toggleSidebar() {
+                sidebar.classList.toggle('open');
+                const icon = getElement('menu-icon');
+                if (icon) {
+                    icon.textContent = sidebar.classList.contains('open') ? '✕' : '☰';
+                }
+            }
+
+            menuBtn?.addEventListener('click', toggleSidebar);
+            navMenu?.addEventListener('click', toggleSidebar);
+
+            // Sidebar handle drag (mobile)
+            const sidebarHandle = getElement('sidebar-handle');
+            let startY = 0;
+            let currentY = 0;
+
+            sidebarHandle?.addEventListener('touchstart', (e) => {
+                startY = e.touches[0].clientY;
+            });
+
+            sidebarHandle?.addEventListener('touchmove', (e) => {
+                currentY = e.touches[0].clientY;
+                const diff = currentY - startY;
+                if (diff > 50) {
+                    sidebar.classList.remove('open');
+                }
+            });
+
+            // Parse button with better format detection
+getElement('parse-btn')?.addEventListener('click', () => {
+const textarea = getElement('parser-textarea');
+if (!textarea) return;
+
+const text = textarea.value;
+if (!text.trim()) {
+showToast('Parser input is empty', 'error');
+return;
+}
+
+appLog('=== STARTING PARSING ===');
+appLog('Input length:', text.length, 'characters');
+
+// Count code blocks for debugging
+const codeBlockCount = (text.match(/'```'/g) || []).length / 2;
+appLog('Code blocks found:', codeBlockCount);
+
+let parsed = parseCodeBlocks(text);
+
+if (parsed.length === 0) {
+showToast('No code files found in the input', 'error');
+appLog('=== PARSING FAILED ===');
+appLog('Debug: First 500 chars:', text.substring(0, 500).replace(/\n/g, '\\n'));
+
+// Show what the parser is seeing
+const lines = text.split('\n');
+appLog('First 20 lines:');
+lines.slice(0, 20).forEach((line, i) => {
+appLog(`${i}: ${line.substring(0, 100)}`);
+});
+return;
+}
+
+// Process found files
+let createdCount = 0;
+let updatedCount = 0;
+
+parsed.forEach(f => {
+if (f.name && f.content) {
+const exists = files[f.name];
+files[f.name] = f;
+if (exists) {
+updatedCount++;
+} else {
+createdCount++;
+}
+}
+});
+
+textarea.value = '';
+saveFilesToLocalStorage();
+updateCodeFolder();
+
+const message = `Found ${createdCount} new files, ${updatedCount} updated`;
+showToast(message, 'success');
+appLog(`=== PARSING SUCCESS: ${createdCount} created, ${updatedCount} updated ===`);
+
+// Show detailed report
+parsed.forEach(f => {
+appLog(`• ${f.name} (${f.content.length} chars, ${f.content.split('\n').length} lines)`);
+});
+});
+
+            // Clear parser
+            getElement('clear-parser')?.addEventListener('click', () => {
+                const textarea = getElement('parser-textarea');
+                if (textarea) {
+                    textarea.value = '';
+                    showToast('Parser cleared', 'info');
+                }
+            });
+
+            // Preview controls
+            getElement('close-preview')?.addEventListener('click', () => {
+                getElement('preview-modal').classList.remove('active');
+                document.body.style.overflow = '';
+            });
+
+            getElement('edit-btn')?.addEventListener('click', () => {
+                if (currentEditingFile && files[currentEditingFile]) {
+                    showEdit(currentEditingFile, files[currentEditingFile].type, files[currentEditingFile].content);
+                }
+            });
+
+            // Edit controls
+            getElement('save-btn')?.addEventListener('click', () => {
+                const textarea = getElement('edit-textarea');
+                if (currentEditingFile && files[currentEditingFile] && textarea) {
+                    files[currentEditingFile].content = textarea.value;
+                    getElement('edit-modal').classList.remove('active');
+                    document.body.style.overflow = '';
+                    saveFilesToLocalStorage();
+                    updateCodeFolder();
+                    showToast(`Saved ${currentEditingFile}`, 'success');
+                }
+            });
+
+            getElement('cancel-edit')?.addEventListener('click', () => {
+                getElement('edit-modal').classList.remove('active');
+                document.body.style.overflow = '';
+            });
+
+            // Web preview
+            getElement('web-preview-btn')?.addEventListener('click', showWebPreview);
+            getElement('close-web-preview')?.addEventListener('click', () => {
+                getElement('web-preview-modal').classList.remove('active');
+                document.body.style.overflow = '';
+            });
+
+            // Download
+            getElement('download-btn')?.addEventListener('click', () => {
+    try {
+        const codeFiles = Object.values(files).filter(f => f && f.type === 'code');
+        if (codeFiles.length === 0) {
+            showToast('No files to download', 'info');
+            return;
+        }
+
+        if (typeof JSZip === 'undefined') {
+            showToast('JSZip library not loaded', 'error');
+            return;
+        }
+
+        const zip = new JSZip();
+        codeFiles.forEach(f => {
+            if (f.name && f.content !== undefined) {
+                zip.file(f.name, f.content);
+            }
+        });
+
+        zip.generateAsync({ type: 'base64' }).then(content => {
+            // Check if running in Android WebView
+            if (typeof Android !== 'undefined' && Android.saveFile) {
+                // Use Android interface
+                Android.saveFile('project.zip', 'data:application/zip;base64,' + content);
+                showToast('Project saved to Downloads', 'success');
+            } else {
+                // Fallback to browser download
+                zip.generateAsync({ type: 'blob' }).then(blob => {
+                    const a = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    a.href = url;
+                    a.download = 'project.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    showToast('Project downloaded', 'success');
+                });
+            }
+        });
+    } catch (error) {
+        appLog('Download error:', error.message);
+        showToast('Failed to download project', 'error');
+    }
+});
+
+            // Bulk delete controls
+            getElement('select-all-btn')?.addEventListener('click', () => {
+                selectAllFiles();
+                showToast('All files selected', 'info');
+            });
+
+            getElement('deselect-all-btn')?.addEventListener('click', () => {
+                deselectAllFiles();
+                showToast('Selection cleared', 'info');
+            });
+
+            getElement('bulk-delete-btn')?.addEventListener('click', () => {
+                deleteSelectedFiles();
+            });
+
+            // Upload ZIP
+            getElement('zip-upload')?.addEventListener('change', handleZipUpload);
+
+            // Log controls
+            getElement('clear-log')?.addEventListener('click', () => {
+                const log = getElement('app-log');
+                if (log) {
+                    log.innerHTML = '';
+                    showToast('Log cleared', 'info');
+                }
+            });
+
+            getElement('copy-log')?.addEventListener('click', () => {
+                const log = getElement('app-log');
+                if (!log) return;
+
+                const text = Array.from(log.querySelectorAll('.log-line'))
+                    .map(n => n.textContent)
+                    .join('\n');
+
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(text)
+                        .then(() => showToast('Log copied to clipboard', 'success'))
+                        .catch(() => showToast('Failed to copy log', 'error'));
+                }
+            });
+
+            // Search
+            getElement('search-input')?.addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                const cards = document.querySelectorAll('.file-card');
+                cards.forEach(card => {
+                    const name = card.querySelector('.file-card-name')?.textContent?.toLowerCase() || '';
+                    card.style.display = (!query || name.includes(query)) ? '' : 'none';
+                });
+            });
+
+            // Bottom nav
+            getElement('nav-files')?.addEventListener('click', () => {
+                sidebar.classList.remove('open');
+                document.querySelectorAll('.bottom-nav-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                getElement('nav-files').classList.add('active');
+            });
+
+            getElement('nav-parse')?.addEventListener('click', () => {
+                sidebar.classList.add('open');
+                document.querySelectorAll('.bottom-nav-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                getElement('nav-parse').classList.add('active');
+                setTimeout(() => {
+                    getElement('parser-textarea')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 300);
+            });
+
+            getElement('nav-actions')?.addEventListener('click', () => {
+                sidebar.classList.add('open');
+                document.querySelectorAll('.bottom-nav-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                getElement('nav-actions').classList.add('active');
+                setTimeout(() => {
+                    document.querySelector('.project-actions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 300);
+            });
+
+            // Hide header on scroll down, show on scroll up
+            let lastScroll = 0;
+            const explorer = getElement('file-explorer');
+            explorer?.addEventListener('scroll', () => {
+                const currentScroll = explorer.scrollTop;
+                const header = getElement('main-header');
+                
+                if (currentScroll > lastScroll && currentScroll > 50) {
+                    header.classList.add('hidden');
+                } else {
+                    header.classList.remove('hidden');
+                }
+                
+                lastScroll = currentScroll;
+            });
+
+            // Close modals on backdrop click
+            [getElement('preview-modal'), getElement('edit-modal'), getElement('web-preview-modal')].forEach(modal => {
+                modal?.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.classList.remove('active');
+                        document.body.style.overflow = '';
+                    }
+                });
+            });
+
+            // Keyboard shortcuts removed for mobile-first approach
+            // Users can use touch interactions: tap close buttons, swipe gestures
+            
+            appLog('Event listeners initialized');
+        }
+
+        // ===== Initialization =====
+        document.addEventListener('DOMContentLoaded', () => {
+try {
+appLog('🚀 Parser to File v1.0 initialized');
+loadFilesFromLocalStorage();
+setupEventListeners();
+updateCodeFolder();
+updateStorageInfo(); // Add this line
+showToast('Welcome to Parser to File!', 'success');
+} catch (error) {
+console.error('Fatal error during initialization:', error);
+appLog('Fatal error:', error.message);
+showToast('Failed to initialize app', 'error');
+}
+});
+
+        // Global error handler
+        window.addEventListener('error', (event) => {
+            console.error('Global error:', event.error);
+            appLog('Global error:', event.error?.message || 'Unknown error');
+            showToast('An error occurred', 'error');
+        });
+        
+        // Storage management
+getElement('clear-storage')?.addEventListener('click', () => {
+    if (confirm('Clear all files and storage? This cannot be undone.')) {
+        clearStorage();
+    }
+});
+
+getElement('storage-info')?.addEventListener('click', () => {
+    const info = getStorageInfo();
+    showToast(`Files: ${info.fileCount}, Size: ${(info.totalSize / 1024).toFixed(1)} KB`, 'info');
+});
+    </script>
+</body>
+</html>
