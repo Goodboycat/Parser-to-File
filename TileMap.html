@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adventure Map - Code Studio</title>
+</head>
+<body>
+    <div class="adventure-container">
+        <div class="adventure-panel">
+            <h1>🗺️ Adventure Map</h1>
+            <div>Pinch to zoom • Drag to pan • Tap locations</div>
+        </div>
+
+        <div class="adventure-panel">
+            <div class="map-controls">
+                <button class="map-zoom-btn" id="zoomIn">+</button>
+                <button class="map-zoom-btn" id="zoomOut">-</button>
+                <button class="map-zoom-btn" id="centerMap">⌖</button>
+            </div>
+            <div class="map-container" id="mapContainer">
+                <div class="map-grid" id="mapGrid"></div>
+                <div class="player-marker" id="playerMarker"></div>
+            </div>
+        </div>
+
+        <div class="adventure-panel">
+            <div class="map-legend">
+                <div class="legend-item">
+                    <div class="legend-color tile-grass"></div>
+                    <span>Plains</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color tile-forest"></div>
+                    <span>Forest</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color tile-water"></div>
+                    <span>Water</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color tile-mountain"></div>
+                    <span>Mountains</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color tile-town"></div>
+                    <span>Town</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color tile-dungeon"></div>
+                    <span>Dungeon</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="adventure-panel">
+            <h3>Selected Location</h3>
+            <div id="locationInfo">
+                <div>Tap a location on the map to see details</div>
+            </div>
+            <div>
+                <button id="addMarker">Add Marker</button>
+                <button id="clearMarkers">Clear Markers</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="mobile-nav">
+        <button onclick="location.href='index.html'">Home</button>
+        <button onclick="location.href='battle.html'">Battle</button>
+        <button onclick="location.href='TileMap.html'">Map</button>
+        <button onclick="location.href='chat_hub.html'">Chat</button>
+        <button onclick="location.href='entity.html'">Party</button>
+    </div>
+
+    <script>
+        // Map Configuration
+        const MAP_SIZE = 40;
+        const TILE_SIZE = 64;
+        const VIEWPORT_SIZE = 10;
+
+        // Tile Types
+        const TILE_TYPES = {
+            grass: { color: '#90EE90', icon: '🌾' },
+            forest: { color: '#228B22', icon: '🌲' },
+            water: { color: '#4169E1', icon: '💧' },
+            mountain: { color: '#8B4513', icon: '⛰️' },
+            town: { color: '#FFD700', icon: '🏘️' },
+            dungeon: { color: '#2F4F4F', icon: '🏰' }
+        };
+
+        // Generate procedural map
+        function generateMap() {
+            const map = [];
+            for (let y = 0; y < MAP_SIZE; y++) {
+                const row = [];
+                for (let x = 0; x < MAP_SIZE; x++) {
+                    const noise = Math.random();
+                    let type = 'grass';
+                    
+                    if (noise > 0.8) type = 'forest';
+                    else if (noise > 0.7) type = 'water';
+                    else if (noise > 0.65) type = 'mountain';
+                    else if (noise > 0.6 && Math.random() > 0.95) type = 'town';
+                    else if (noise > 0.55 && Math.random() > 0.97) type = 'dungeon';
+                    
+                    row.push({
+                        type,
+                        x,
+                        y,
+                        name: `${type.charAt(0).toUpperCase()}${type.slice(1)} (${x},${y})`,
+                        marker: null
+                    });
+                }
+                map.push(row);
+            }
+            return map;
+        }
+
+        // State
+        let gameMap = generateMap();
+        let playerPos = { x: Math.floor(MAP_SIZE / 2), y: Math.floor(MAP_SIZE / 2) };
+        let scale = 1;
+        let offset = { x: 0, y: 0 };
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let selectedTile = null;
+
+        // DOM Elements
+        const mapGrid = document.getElementById('mapGrid');
+        const playerMarker = document.getElementById('playerMarker');
+        const mapContainer = document.getElementById('mapContainer');
+        const locationInfo = document.getElementById('locationInfo');
+        const zoomInBtn = document.getElementById('zoomIn');
+        const zoomOutBtn = document.getElementById('zoomOut');
+        const centerMapBtn = document.getElementById('centerMap');
+        const addMarkerBtn = document.getElementById('addMarker');
+        const clearMarkersBtn = document.getElementById('clearMarkers');
+
+        // Initialize Map
+        function renderMap() {
+            mapGrid.innerHTML = '';
+            
+            for (let y = 0; y < MAP_SIZE; y++) {
+                for (let x = 0; x < MAP_SIZE; x++) {
+                    const tile = gameMap[y][x];
+                    const tileEl = document.createElement('div');
+                    tileEl.className = `map-tile tile-${tile.type}`;
+                    tileEl.style.left = `${x * TILE_SIZE}px`;
+                    tileEl.style.top = `${y * TILE_SIZE}px`;
+                    tileEl.innerHTML = TILE_TYPES[tile.type].icon;
+                    
+                    if (tile.marker) {
+                        const markerEl = document.createElement('div');
+                        markerEl.className = 'tile-marker';
+                        markerEl.textContent = '📍';
+                        tileEl.appendChild(markerEl);
+                    }
+                    
+                    tileEl.addEventListener('click', () => selectTile(x, y));
+                    mapGrid.appendChild(tileEl);
+                }
+            }
+            
+            updatePlayerPosition();
+            updateTransform();
+        }
+
+        function updatePlayerPosition() {
+            playerMarker.style.left = `${playerPos.x * TILE_SIZE + TILE_SIZE / 2}px`;
+            playerMarker.style.top = `${playerPos.y * TILE_SIZE + TILE_SIZE / 2}px`;
+        }
+
+        function updateTransform() {
+            const centerX = mapContainer.offsetWidth / 2;
+            const centerY = mapContainer.offsetHeight / 2;
+            const mapCenterX = (playerPos.x * TILE_SIZE + TILE_SIZE / 2) * scale;
+            const mapCenterY = (playerPos.y * TILE_SIZE + TILE_SIZE / 2) * scale;
+            
+            const translateX = centerX - mapCenterX + offset.x;
+            const translateY = centerY - mapCenterY + offset.y;
+            
+            mapGrid.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+            playerMarker.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        }
+
+        function selectTile(x, y) {
+            selectedTile = { x, y };
+            const tile = gameMap[y][x];
+            
+            locationInfo.innerHTML = `
+                <h4>${tile.name}</h4>
+                <p>Type: ${tile.type}</p>
+                <p>Coordinates: (${x}, ${y})</p>
+                ${tile.marker ? `<p>Marker: ${tile.marker}</p>` : ''}
+            `;
+        }
+
+        // Controls
+        zoomInBtn.addEventListener('click', () => {
+            scale = Math.min(scale + 0.2, 3);
+            updateTransform();
+        });
+
+        zoomOutBtn.addEventListener('click', () => {
+            scale = Math.max(scale - 0.2, 0.5);
+            updateTransform();
+        });
+
+        centerMapBtn.addEventListener('click', () => {
+            offset = { x: 0, y: 0 };
+            updateTransform();
+        });
+
+        addMarkerBtn.addEventListener('click', () => {
+            if (!selectedTile) return alert('Select a tile first');
+            const marker = prompt('Marker name:');
+            if (marker) {
+                gameMap[selectedTile.y][selectedTile.x].marker = marker;
+                renderMap();
+                selectTile(selectedTile.x, selectedTile.y);
+            }
+        });
+
+        clearMarkersBtn.addEventListener('click', () => {
+            if (!confirm('Clear all markers?')) return;
+            gameMap.forEach(row => row.forEach(tile => tile.marker = null));
+            renderMap();
+        });
+
+        // Drag Controls
+        mapContainer.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            dragStart = { x: e.clientX - offset.x, y: e.clientY - offset.y };
+        });
+
+        mapContainer.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            offset = {
+                x: e.clientX - dragStart.x,
+                y: e.clientY - dragStart.y
+            };
+            updateTransform();
+        });
+
+        mapContainer.addEventListener('mouseup', () => isDragging = false);
+        mapContainer.addEventListener('mouseleave', () => isDragging = false);
+
+        // Touch Controls
+        let touchStart = null;
+        let lastPinchDistance = null;
+
+        mapContainer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            } else if (e.touches.length === 2) {
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                lastPinchDistance = Math.sqrt(dx * dx + dy * dy);
+            }
+        });
+
+        mapContainer.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            
+            if (e.touches.length === 1 && touchStart) {
+                offset = {
+                    x: e.touches[0].clientX - touchStart.x,
+                    y: e.touches[0].clientY - touchStart.y
+                };
+                updateTransform();
+            } else if (e.touches.length === 2 && lastPinchDistance) {
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const delta = distance - lastPinchDistance;
+                
+                scale = Math.max(0.5, Math.min(3, scale + delta * 0.01));
+                lastPinchDistance = distance;
+                updateTransform();
+            }
+        });
+
+        mapContainer.addEventListener('touchend', () => {
+            touchStart = null;
+            lastPinchDistance = null;
+        });
+
+        // Initialize
+        renderMap();
+    </script>
+</body>
+</html>

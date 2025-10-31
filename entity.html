@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TTRPG Toolkit — Entities (with Levels & Effects)</title>
+<meta name="description" content="Entity editor: attributes, abilities, level system, acronyms, drag-reorder, ability self-effects." />
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div>
+        <h1>Entities — Levels & Effects</h1>
+        <div>Create entities with levels, attributes (with acronyms), and abilities that can affect the user or the target. Drag to reorder attributes & abilities.</div>
+      </div>
+      <div>
+        <a href="index.html">Home</a>
+        <a href="battle.html">Battle</a>
+      </div>
+    </div>
+
+    <div>
+      <aside class="panel">
+        <div>
+          <input id="search" placeholder="Search entities..." />
+          <button id="newEntity">+ New</button>
+        </div>
+
+        <div>
+          <div>Start with a template:</div>
+          <select id="templateSelector">
+            <option value="">— Choose TTRPG System —</option>
+            <option value="dnd5e">D&D 5th Edition</option>
+            <option value="pathfinder2e">Pathfinder 2e</option>
+            <option value="callofcthulhu">Call of Cthulhu</option>
+            <option value="worldofdarkness">World of Darkness</option>
+            <option value="cyberpunkred">Cyberpunk RED</option>
+            <option value="generic">Generic TTRPG</option>
+          </select>
+          <button id="applyTemplate">Apply Template</button>
+        </div>
+
+        <div id="entitiesList"></div>
+
+        <div>
+          <button id="exportAll">Export</button>
+          <button id="importBtn">Import</button>
+          <input id="importFile" type="file" accept="application/json" style="display:none" />
+        </div>
+      </aside>
+
+      <main>
+        <div class="panel">
+          <div>
+            <input id="entEmoji" placeholder="Emoji" />
+            <input id="entName" placeholder="Entity name (auto uppercase for acronyms)" />
+            <input id="entLevel" type="number" placeholder="Level" />
+            <input id="entXP" type="number" placeholder="XP" />
+          </div>
+
+          <div>
+            <input id="entClass" placeholder="Class / Role (optional)" />
+            <input id="entDesc" placeholder="Short description" />
+          </div>
+
+          <hr/>
+
+          <div>
+            <strong>Attributes</strong>
+            <div>Names become UPPERCASE automatically. Drag to reorder.</div>
+          </div>
+
+          <div id="attrsWrap"></div>
+
+          <div>
+            <input id="newAttrName" placeholder="Attr acronym (e.g., STR)" />
+            <input id="newAttrLabel" placeholder="Label (Strength)" />
+            <input id="newAttrVal" type="number" placeholder="Value" />
+            <button id="addAttr">Add</button>
+          </div>
+
+          <hr/>
+
+          <div>
+            <strong>Abilities</strong>
+            <div>Ability names uppercase. Drag to reorder. Abilities may affect self or target with custom stat changes or statuses.</div>
+          </div>
+
+          <div id="abilitiesWrap"></div>
+
+          <div>
+            <input id="newAbiName" placeholder="Ability name (e.g., PIERCING_ARROW)" />
+            <input id="newAbiFormula" placeholder="Formula e.g., 1d8+STR" />
+          </div>
+          <div>
+            <input id="newAbiDesc" placeholder="Description" />
+            <button id="addAbility">Add Ability</button>
+          </div>
+
+          <div>
+            <button id="saveEntity">Save Entity</button>
+            <button id="deleteEntity">Delete</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <strong>Preview / Apply Ability (local)</strong>
+          <div>Simulate applying an ability to the entity itself (self-effects) to preview stat changes and statuses.</div>
+          <div>
+            <select id="previewEntity"></select>
+            <select id="previewAbility"><option value="">— ability —</option></select>
+          </div>
+          <div>
+            <button id="applyPreview">Apply to Self (Preview)</button>
+            <button id="clearPreview">Clear Preview</button>
+          </div>
+
+          <div id="previewArea"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+<script>
+// Entity management with localStorage
+const storage = {
+  get(key) { 
+    const val = localStorage.getItem(key);
+    return val ? JSON.parse(val) : null;
+  },
+  set(key, val) { localStorage.setItem(key, JSON.stringify(val)); },
+  remove(key) { localStorage.removeItem(key); }
+};
+
+let entities = storage.get('ttrpg_entities') || [];
+let currentId = null;
+
+// TTRPG System Templates
+const templates = {
+  dnd5e: {
+    attributes: [
+      {name:'STR', label:'Strength', value:10},
+      {name:'DEX', label:'Dexterity', value:10},
+      {name:'CON', label:'Constitution', value:10},
+      {name:'INT', label:'Intelligence', value:10},
+      {name:'WIS', label:'Wisdom', value:10},
+      {name:'CHA', label:'Charisma', value:10}
+    ],
+    abilities: [
+      {name:'ATTACK', formula:'1d20+STR', description:'Basic melee attack'},
+      {name:'FIREBALL', formula:'8d6', description:'Ranged spell damage'}
+    ]
+  },
+  pathfinder2e: {
+    attributes: [
+      {name:'STR', label:'Strength', value:10},
+      {name:'DEX', label:'Dexterity', value:10},
+      {name:'CON', label:'Constitution', value:10},
+      {name:'INT', label:'Intelligence', value:10},
+      {name:'WIS', label:'Wisdom', value:10},
+      {name:'CHA', label:'Charisma', value:10}
+    ],
+    abilities: [
+      {name:'STRIKE', formula:'1d20+STR', description:'Basic strike'},
+      {name:'CAST_SPELL', formula:'2d6+INT', description:'Spell attack'}
+    ]
+  },
+  callofcthulhu: {
+    attributes: [
+      {name:'STR', label:'Strength', value:50},
+      {name:'CON', label:'Constitution', value:50},
+      {name:'DEX', label:'Dexterity', value:50},
+      {name:'INT', label:'Intelligence', value:50},
+      {name:'POW', label:'Power', value:50},
+      {name:'APP', label:'Appearance', value:50},
+      {name:'EDU', label:'Education', value:50},
+      {name:'SAN', label:'Sanity', value:50}
+    ],
+    abilities: [
+      {name:'SKILL_CHECK', formula:'1d100', description:'Skill check vs attribute'},
+      {name:'DAMAGE', formula:'1d6', description:'Basic damage'}
+    ]
+  },
+  worldofdarkness: {
+    attributes: [
+      {name:'STR', label:'Strength', value:2},
+      {name:'DEX', label:'Dexterity', value:2},
+      {name:'STA', label:'Stamina', value:2},
+      {name:'CHA', label:'Charisma', value:2},
+      {name:'MAN', label:'Manipulation', value:2},
+      {name:'APP', label:'Appearance', value:2},
+      {name:'PER', label:'Perception', value:2},
+      {name:'INT', label:'Intelligence', value:2},
+      {name:'WIT', label:'Wits', value:2}
+    ],
+    abilities: [
+      {name:'BRAWL', formula:'STR+2', description:'Melee attack'},
+      {name:'DISCIPLINE', formula:'MAN+3', description:'Special power'}
+    ]
+  },
+  cyberpunkred: {
+    attributes: [
+      {name:'INT', label:'Intelligence', value:5},
+      {name:'REF', label:'Reflexes', value:5},
+      {name:'DEX', label:'Dexterity', value:5},
+      {name:'TECH', label:'Technical', value:5},
+      {name:'COOL', label:'Cool', value:5},
+      {name:'WILL', label:'Willpower', value:5},
+      {name:'LUCK', label:'Luck', value:5},
+      {name:'MOVE', label:'Movement', value:5},
+      {name:'BODY', label:'Body', value:5},
+      {name:'EMP', label:'Empathy', value:5}
+    ],
+    abilities: [
+      {name:'SHOOT', formula:'1d10+REF', description:'Ranged attack'},
+      {name:'HACK', formula:'1d10+INT', description:'Netrunning'}
+    ]
+  },
+  generic: {
+    attributes: [
+      {name:'HP', label:'Health Points', value:100},
+      {name:'MP', label:'Mana Points', value:50},
+      {name:'ATK', label:'Attack', value:10},
+      {name:'DEF', label:'Defense', value:10},
+      {name:'SPD', label:'Speed', value:10}
+    ],
+    abilities: [
+      {name:'BASIC_ATTACK', formula:'1d6+ATK', description:'Standard attack'},
+      {name:'SPECIAL_MOVE', formula:'2d6+ATK', description:'Powerful attack'}
+    ]
+  }
+};
+
+// UI Elements
+const searchInput = document.getElementById('search');
+const entitiesList = document.getElementById('entitiesList');
+const newEntityBtn = document.getElementById('newEntity');
+const templateSelector = document.getElementById('templateSelector');
+const applyTemplateBtn = document.getElementById('applyTemplate');
+
+const entEmoji = document.getElementById('entEmoji');
+const entName = document.getElementById('entName');
+const entLevel = document.getElementById('entLevel');
+const entXP = document.getElementById('entXP');
+const entClass = document.getElementById('entClass');
+const entDesc = document.getElementById('entDesc');
+
+const attrsWrap = document.getElementById('attrsWrap');
+const newAttrName = document.getElementById('newAttrName');
+const newAttrLabel = document.getElementById('newAttrLabel');
+const newAttrVal = document.getElementById('newAttrVal');
+const addAttrBtn = document.getElementById('addAttr');
+
+const abilitiesWrap = document.getElementById('abilitiesWrap');
+const newAbiName = document.getElementById('newAbiName');
+const newAbiFormula = document.getElementById('newAbiFormula');
+const newAbiDesc = document.getElementById('newAbiDesc');
+const addAbilityBtn = document.getElementById('addAbility');
+
+const saveEntityBtn = document.getElementById('saveEntity');
+const deleteEntityBtn = document.getElementById('deleteEntity');
+const exportAllBtn = document.getElementById('exportAll');
+const importBtn = document.getElementById('importBtn');
+const importFile = document.getElementById('importFile');
+
+const previewEntitySelect = document.getElementById('previewEntity');
+const previewAbilitySelect = document.getElementById('previewAbility');
+const applyPreviewBtn = document.getElementById('applyPreview');
+const clearPreviewBtn = document.getElementById('clearPreview');
+const previewArea = document.getElementById('previewArea');
+
+// Initialize
+renderEntitiesList();
+updatePreviewEntitySelect();
+
+// Event Listeners
+newEntityBtn.addEventListener('click', createNewEntity);
+applyTemplateBtn.addEventListener('click', applyTemplate);
+addAttrBtn.addEventListener('click', addAttribute);
+addAbilityBtn.addEventListener('click', addAbility);
+saveEntityBtn.addEventListener('click', saveEntity);
+deleteEntityBtn.addEventListener('click', deleteEntity);
+exportAllBtn.addEventListener('click', exportAllEntities);
+importBtn.addEventListener('click', () => importFile.click());
+importFile.addEventListener('change', importEntities);
+searchInput.addEventListener('input', renderEntitiesList);
+previewEntitySelect.addEventListener('change', updatePreviewAbilitySelect);
+applyPreviewBtn.addEventListener('click', applyPreview);
+clearPreviewBtn.addEventListener('click', clearPreview);
+
+function createNewEntity() {
+  currentId = Date.now().toString();
+  clearForm();
+  renderEntitiesList();
+}
+
+function clearForm() {
+  entEmoji.value = '';
+  entName.value = '';
+  entLevel.value = '1';
+  entXP.value = '0';
+  entClass.value = '';
+  entDesc.value = '';
+  attrsWrap.innerHTML = '';
+  abilitiesWrap.innerHTML = '';
+  previewArea.innerHTML = '';
+}
+
+function applyTemplate() {
+  const tpl = templates[templateSelector.value];
+  if (!tpl) return alert('Select a template first');
+  
+  attrsWrap.innerHTML = '';
+  abilitiesWrap.innerHTML = '';
+  
+  tpl.attributes.forEach(attr => {
+    const entity = getCurrentEntity();
+    entity.attributes = entity.attributes || [];
+    entity.attributes.push({...attr});
+  });
+  
+  tpl.abilities.forEach(abi => {
+    const entity = getCurrentEntity();
+    entity.abilities = entity.abilities || [];
+    entity.abilities.push({...abi});
+  });
+  
+  renderAttributes();
+  renderAbilities();
+}
+
+function getCurrentEntity() {
+  if (!currentId) {
+    currentId = Date.now().toString();
+  }
+  let entity = entities.find(e => e.id === currentId);
+  if (!entity) {
+    entity = {
+      id: currentId,
+      emoji: '',
+      name: '',
+      level: 1,
+      xp: 0,
+      class: '',
+      description: '',
+      attributes: [],
+      abilities: []
+    };
+    entities.push(entity);
+  }
+  return entity;
+}
+
+function addAttribute() {
+  const name = newAttrName.value.trim().toUpperCase();
+  const label = newAttrLabel.value.trim();
+  const value = parseFloat(newAttrVal.value) || 0;
+  
+  if (!name) return alert('Attribute name required');
+  
+  const entity = getCurrentEntity();
+  entity.attributes = entity.attributes || [];
+  entity.attributes.push({ name, label, value });
+  
+  newAttrName.value = '';
+  newAttrLabel.value = '';
+  newAttrVal.value = '';
+  
+  renderAttributes();
+}
+
+function renderAttributes() {
+  const entity = getCurrentEntity();
+  attrsWrap.innerHTML = '';
+  
+  if (!entity.attributes) return;
+  
+  entity.attributes.forEach((attr, idx) => {
+    const div = document.createElement('div');
+    div.draggable = true;
+    div.innerHTML = `
+      <span>☰</span>
+      <strong>${attr.name}</strong>
+      <span>${attr.label}</span>
+      <input type="number" value="${attr.value}" data-idx="${idx}" />
+      <button data-idx="${idx}">×</button>
+    `;
+    
+    div.querySelector('input').addEventListener('change', (e) => {
+      entity.attributes[idx].value = parseFloat(e.target.value) || 0;
+    });
+    
+    div.querySelector('button').addEventListener('click', () => {
+      entity.attributes.splice(idx, 1);
+      renderAttributes();
+    });
+    
+    div.addEventListener('dragstart', () => div.classList.add('dragging'));
+    div.addEventListener('dragend', () => {
+      div.classList.remove('dragging');
+      reorderAttributes();
+    });
+    
+    attrsWrap.appendChild(div);
+  });
+  
+  attrsWrap.addEventListener('dragover', handleDragOver);
+}
+
+function reorderAttributes() {
+  const entity = getCurrentEntity();
+  const items = [...attrsWrap.children];
+  entity.attributes = items.map((item, idx) => {
+    const input = item.querySelector('input');
+    const origIdx = parseInt(input.dataset.idx);
+    return entity.attributes[origIdx];
+  });
+  renderAttributes();
+}
+
+function addAbility() {
+  const name = newAbiName.value.trim().toUpperCase();
+  const formula = newAbiFormula.value.trim();
+  const description = newAbiDesc.value.trim();
+  
+  if (!name || !formula) return alert('Ability name and formula required');
+  
+  const entity = getCurrentEntity();
+  entity.abilities = entity.abilities || [];
+  entity.abilities.push({ name, formula, description, effects: [] });
+  
+  newAbiName.value = '';
+  newAbiFormula.value = '';
+  newAbiDesc.value = '';
+  
+  renderAbilities();
+}
+
+function renderAbilities() {
+  const entity = getCurrentEntity();
+  abilitiesWrap.innerHTML = '';
+  
+  if (!entity.abilities) return;
+  
+  entity.abilities.forEach((abi, idx) => {
+    const div = document.createElement('div');
+    div.draggable = true;
+    div.innerHTML = `
+      <span>☰</span>
+      <strong>${abi.name}</strong>
+      <code>${abi.formula}</code>
+      <span>${abi.description || ''}</span>
+      <button data-idx="${idx}">×</button>
+    `;
+    
+    div.querySelector('button').addEventListener('click', () => {
+      entity.abilities.splice(idx, 1);
+      renderAbilities();
+    });
+    
+    div.addEventListener('dragstart', () => div.classList.add('dragging'));
+    div.addEventListener('dragend', () => {
+      div.classList.remove('dragging');
+      reorderAbilities();
+    });
+    
+    abilitiesWrap.appendChild(div);
+  });
+  
+  abilitiesWrap.addEventListener('dragover', handleDragOver);
+}
+
+function reorderAbilities() {
+  const entity = getCurrentEntity();
+  const items = [...abilitiesWrap.children];
+  entity.abilities = items.map((item, idx) => {
+    const btn = item.querySelector('button');
+    const origIdx = parseInt(btn.dataset.idx);
+    return entity.abilities[origIdx];
+  });
+  renderAbilities();
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  const afterElement = getDragAfterElement(e.currentTarget, e.clientY);
+  const dragging = document.querySelector('.dragging');
+  if (!dragging) return;
+  
+  if (afterElement == null) {
+    e.currentTarget.appendChild(dragging);
+  } else {
+    e.currentTarget.insertBefore(dragging, afterElement);
+  }
+}
+
+function getDragAfterElement(container, y) {
+  const els = [...container.querySelectorAll('[draggable="true"]:not(.dragging)')];
+  
+  return els.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child };
+    } else {
+      return closest;
+    }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function saveEntity() {
+  const entity = getCurrentEntity();
+  entity.emoji = entEmoji.value.trim();
+  entity.name = entName.value.trim();
+  entity.level = parseInt(entLevel.value) || 1;
+  entity.xp = parseInt(entXP.value) || 0;
+  entity.class = entClass.value.trim();
+  entity.description = entDesc.value.trim();
+  
+  if (!entity.name) return alert('Entity name required');
+  
+  const existing = entities.find(e => e.id === currentId);
+  if (!existing) {
+    entities.push(entity);
+  }
+  
+  storage.set('ttrpg_entities', entities);
+  alert('Entity saved!');
+  renderEntitiesList();
+  updatePreviewEntitySelect();
+}
+
+function deleteEntity() {
+  if (!currentId) return;
+  if (!confirm('Delete this entity?')) return;
+  
+  entities = entities.filter(e => e.id !== currentId);
+  storage.set('ttrpg_entities', entities);
+  currentId = null;
+  clearForm();
+  renderEntitiesList();
+  updatePreviewEntitySelect();
+}
+
+function loadEntity(id) {
+  currentId = id;
+  const entity = entities.find(e => e.id === id);
+  if (!entity) return;
+  
+  entEmoji.value = entity.emoji || '';
+  entName.value = entity.name || '';
+  entLevel.value = entity.level || 1;
+  entXP.value = entity.xp || 0;
+  entClass.value = entity.class || '';
+  entDesc.value = entity.description || '';
+  
+  renderAttributes();
+  renderAbilities();
+}
+
+function renderEntitiesList() {
+  const search = searchInput.value.toLowerCase();
+  const filtered = entities.filter(e => 
+    e.name.toLowerCase().includes(search) ||
+    (e.class || '').toLowerCase().includes(search)
+  );
+  
+  entitiesList.innerHTML = filtered.map(e => `
+    <div onclick="loadEntity('${e.id}')" style="cursor:pointer;padding:8px;border:1px solid #ccc;margin:4px 0;">
+      <div>${e.emoji} <strong>${e.name}</strong> Lv${e.level}</div>
+      <div>${e.class || ''}</div>
+    </div>
+  `).join('');
+}
+
+function exportAllEntities() {
+  const data = JSON.stringify(entities, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'entities.json';
+  a.click();
+}
+
+function importEntities(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const imported = JSON.parse(ev.target.result);
+      entities = imported;
+      storage.set('ttrpg_entities', entities);
+      renderEntitiesList();
+      updatePreviewEntitySelect();
+      alert('Import successful!');
+    } catch (err) {
+      alert('Import failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function updatePreviewEntitySelect() {
+  previewEntitySelect.innerHTML = '<option value="">— select entity —</option>' +
+    entities.map(e => `<option value="${e.id}">${e.emoji} ${e.name}</option>`).join('');
+}
+
+function updatePreviewAbilitySelect() {
+  const id = previewEntitySelect.value;
+  const entity = entities.find(e => e.id === id);
+  
+  if (!entity || !entity.abilities) {
+    previewAbilitySelect.innerHTML = '<option value="">— ability —</option>';
+    return;
+  }
+  
+  previewAbilitySelect.innerHTML = '<option value="">— ability —</option>' +
+    entity.abilities.map((a, idx) => 
+      `<option value="${idx}">${a.name} (${a.formula})</option>`
+    ).join('');
+}
+
+function applyPreview() {
+  const entityId = previewEntitySelect.value;
+  const abiIdx = previewAbilitySelect.value;
+  
+  if (!entityId || abiIdx === '') return alert('Select entity and ability');
+  
+  const entity = entities.find(e => e.id === entityId);
+  const ability = entity.abilities[parseInt(abiIdx)];
+  
+  if (!ability) return;
+  
+  const result = evaluateFormula(ability.formula, entity.attributes);
+  
+  previewArea.innerHTML = `
+    <div><strong>${ability.name}</strong> applied to <strong>${entity.name}</strong></div>
+    <div>Formula: <code>${ability.formula}</code></div>
+    <div>Result: <strong>${result}</strong></div>
+    <div>${ability.description || ''}</div>
+  `;
+}
+
+function clearPreview() {
+  previewArea.innerHTML = '';
+}
+
+function evaluateFormula(formula, attributes) {
+  let expr = formula;
+  
+  // Replace attribute tokens
+  if (attributes) {
+    attributes.forEach(attr => {
+      const regex = new RegExp(`\\b${attr.name}\\b`, 'gi');
+      expr = expr.replace(regex, attr.value);
+    });
+  }
+  
+  // Dice notation: XdY
+  expr = expr.replace(/(\d+)d(\d+)/gi, (match, count, sides) => {
+    let total = 0;
+    for (let i = 0; i < parseInt(count); i++) {
+      total += Math.floor(Math.random() * parseInt(sides)) + 1;
+    }
+    return total;
+  });
+  
+  // Math functions
+  expr = expr.replace(/floor\(/gi, 'Math.floor(');
+  expr = expr.replace(/ceil\(/gi, 'Math.ceil(');
+  expr = expr.replace(/round\(/gi, 'Math.round(');
+  expr = expr.replace(/abs\(/gi, 'Math.abs(');
+  expr = expr.replace(/min\(/gi, 'Math.min(');
+  expr = expr.replace(/max\(/gi, 'Math.max(');
+  
+  try {
+    return eval(expr);
+  } catch (e) {
+    return 'Error: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>TTRPG Toolkit — Formulas</title>
+<meta name="description" content="Create and manage shared formulas used across the toolkit.">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>Formulas</h1>
+        <div>Create named formulas usable across Battle, Economy, and other pages. Use tokens (e.g., STR) in expressions.</div>
+      </div>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="entity.html">Entities</a>
+        <a href="battle.html">Battle</a>
+      </nav>
+    </header>
+
+    <section class="panel">
+      <strong>Create / Edit Formula</strong>
+      <label>Name
+        <input id="fname" placeholder="Ex: Archer - Volley"/>
+      </label>
+      <label>Expression
+        <input id="fexpr" placeholder="Ex: 3d6 + floor(DEX/2)"/>
+      </label>
+      <label>Description
+        <textarea id="fdesc" rows="3" placeholder="What this formula does..."></textarea>
+      </label>
+      <div class="row">
+        <button id="saveBtn">Save Formula</button>
+        <button id="clearBtn">Clear</button>
+        <div style="flex:1"></div>
+        <label>Test with attribute tokens:</label>
+        <select id="testEntity"></select>
+        <button id="testBtn">Test</button>
+      </div>
+      <div id="testResult">Result will appear here.</div>
+    </section>
+
+    <section class="panel">
+      <strong>Saved Formulas</strong>
+      <div id="list" class="list"></div>
+    </section>
+  </div>
+
+<script>
+const storage = {
+  get(key) {
+    const val = localStorage.getItem(key);
+    return val ? JSON.parse(val) : null;
+  },
+  set(key, val) {
+    localStorage.setItem(key, JSON.stringify(val));
+  }
+};
+
+let formulas = storage.get('ttrpg_formulas') || [];
+let entities = storage.get('ttrpg_entities') || [];
+let editingId = null;
+
+const fnameInput = document.getElementById('fname');
+const fexprInput = document.getElementById('fexpr');
+const fdescInput = document.getElementById('fdesc');
+const saveBtn = document.getElementById('saveBtn');
+const clearBtn = document.getElementById('clearBtn');
+const testEntitySelect = document.getElementById('testEntity');
+const testBtn = document.getElementById('testBtn');
+const testResult = document.getElementById('testResult');
+const listDiv = document.getElementById('list');
+
+// Initialize
+renderList();
+updateTestEntitySelect();
+
+saveBtn.addEventListener('click', saveFormula);
+clearBtn.addEventListener('click', clearForm);
+testBtn.addEventListener('click', testFormula);
+
+function saveFormula() {
+  const name = fnameInput.value.trim();
+  const expr = fexprInput.value.trim();
+  const desc = fdescInput.value.trim();
+  
+  if (!name || !expr) {
+    return alert('Name and expression required');
+  }
+  
+  if (editingId) {
+    const formula = formulas.find(f => f.id === editingId);
+    if (formula) {
+      formula.name = name;
+      formula.expression = expr;
+      formula.description = desc;
+    }
+    editingId = null;
+  } else {
+    formulas.push({
+      id: Date.now().toString(),
+      name,
+      expression: expr,
+      description: desc
+    });
+  }
+  
+  storage.set('ttrpg_formulas', formulas);
+  clearForm();
+  renderList();
+  alert('Formula saved!');
+}
+
+function clearForm() {
+  fnameInput.value = '';
+  fexprInput.value = '';
+  fdescInput.value = '';
+  testResult.textContent = 'Result will appear here.';
+  editingId = null;
+}
+
+function editFormula(id) {
+  const formula = formulas.find(f => f.id === id);
+  if (!formula) return;
+  
+  editingId = id;
+  fnameInput.value = formula.name;
+  fexprInput.value = formula.expression;
+  fdescInput.value = formula.description || '';
+}
+
+function deleteFormula(id) {
+  if (!confirm('Delete this formula?')) return;
+  
+  formulas = formulas.filter(f => f.id !== id);
+  storage.set('ttrpg_formulas', formulas);
+  renderList();
+}
+
+function renderList() {
+  if (formulas.length === 0) {
+    listDiv.innerHTML = '<div>No formulas yet. Create one above!</div>';
+    return;
+  }
+  
+  listDiv.innerHTML = formulas.map(f => `
+    <div style="border:1px solid #ccc;padding:12px;margin:8px 0;">
+      <div><strong>${f.name}</strong></div>
+      <div><code>${f.expression}</code></div>
+      <div>${f.description || ''}</div>
+      <div style="margin-top:8px;">
+        <button onclick="editFormula('${f.id}')">Edit</button>
+        <button onclick="deleteFormula('${f.id}')">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateTestEntitySelect() {
+  testEntitySelect.innerHTML = '<option value="">— No entity (plain eval) —</option>' +
+    entities.map(e => `<option value="${e.id}">${e.emoji || ''} ${e.name}</option>`).join('');
+}
+
+function testFormula() {
+  const expr = fexprInput.value.trim();
+  if (!expr) return alert('Enter an expression first');
+  
+  const entityId = testEntitySelect.value;
+  let attributes = null;
+  
+  if (entityId) {
+    const entity = entities.find(e => e.id === entityId);
+    if (entity) {
+      attributes = entity.attributes;
+    }
+  }
+  
+  const result = evaluateFormula(expr, attributes);
+  testResult.textContent = `Result: ${result}`;
+}
+
+function evaluateFormula(formula, attributes) {
+  let expr = formula;
+  
+  // Replace attribute tokens
+  if (attributes) {
+    attributes.forEach(attr => {
+      const regex = new RegExp(`\\b${attr.name}\\b`, 'gi');
+      expr = expr.replace(regex, attr.value);
+    });
+  }
+  
+  // Dice notation: XdY
+  expr = expr.replace(/(\d+)d(\d+)/gi, (match, count, sides) => {
+    let total = 0;
+    for (let i = 0; i < parseInt(count); i++) {
+      total += Math.floor(Math.random() * parseInt(sides)) + 1;
+    }
+    return total;
+  });
+  
+  // Math functions
+  expr = expr.replace(/floor\(/gi, 'Math.floor(');
+  expr = expr.replace(/ceil\(/gi, 'Math.ceil(');
+  expr = expr.replace(/round\(/gi, 'Math.round(');
+  expr = expr.replace(/abs\(/gi, 'Math.abs(');
+  expr = expr.replace(/min\(/gi, 'Math.min(');
+  expr = expr.replace(/max\(/gi, 'Math.max(');
+  
+  try {
+    return eval(expr);
+  } catch (e) {
+    return 'Error: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>
