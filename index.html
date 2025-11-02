@@ -1170,9 +1170,11 @@
                             </button>
                         </div>
                         <div class="parser-instructions">
-                            <strong>Format:</strong> Use <code>**filename.ext**</code> before <code>```code```</code><br>
-                            <strong>Example:</strong><br>
-                            <code>**index.html**</code><br>
+                            <strong>Supported Formats:</strong><br>
+                            1. <strong>DeepSeek:</strong> <code>filename.ext (optional text)</code> before <code>```code```</code><br>
+                            2. <strong>Markdown:</strong> <code>**filename.ext**</code> before <code>```code```</code><br>
+                            <strong>Examples:</strong><br>
+                            <code>entity.html (without CSS):</code><br>
                             <code>```html</code><br>
                             <code>&lt;html&gt;...&lt;/html&gt;</code><br>
                             <code>```</code>
@@ -1931,6 +1933,27 @@ function parseSimpleFormat(text) {
         appLog('Parsing simple filename + code block format...');
         const out = [];
         
+        // Pattern 0: DeepSeek format - (optional text) filename.ext (optional text) \n```ext\ncode```
+        // Matches: "entity.html (without CSS):", "formulas.html:", "1. index.html", etc.
+        const deepSeekPattern = /(?:^|\n)(?:[\s\S]*?)?([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)(?:[^\n]*)?\s*\n+```([a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
+        
+        let deepSeekMatch;
+        while ((deepSeekMatch = deepSeekPattern.exec(text)) !== null) {
+            const name = deepSeekMatch[1].trim();
+            const language = deepSeekMatch[2] || '';
+            const content = deepSeekMatch[3].trim();
+            
+            // Ensure it has proper extension and content
+            if (name.includes('.') && content.length > 5 && !out.some(f => f.name === name)) {
+                out.push({
+                    name: name,
+                    type: getFileType(name),
+                    content: content
+                });
+                appLog(`✓ DeepSeek format: ${name}`);
+            }
+        }
+        
         // Pattern 1: Files with extensions (standard format)
         const pattern = /([a-zA-Z0-9_\-\.\/]*\.[a-zA-Z0-9_\-\.]+)\s*\n+```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)```/g;
         
@@ -2081,7 +2104,23 @@ function parseAggressive(text) {
                     badge.classList.add('special');
                 }
                 
-                if (fileType === 'code' || fileType === 'special') {
+                // Check if this is an HTML file - render it in an iframe
+                const isHtmlFile = fileName && (fileName.endsWith('.html') || fileName.endsWith('.htm'));
+                
+                if (isHtmlFile && content) {
+                    // Render HTML in iframe for proper preview
+                    const blob = new Blob([content], { type: 'text/html' });
+                    const url = URL.createObjectURL(blob);
+                    contentDiv.innerHTML = `
+                        <div style="width:100%;height:600px;border:1px solid #ccc;">
+                            <iframe src="${url}" style="width:100%;height:100%;border:none;" sandbox="allow-scripts allow-same-origin"></iframe>
+                        </div>
+                        <details style="margin-top:1rem;">
+                            <summary style="cursor:pointer;padding:0.5rem;background:rgba(0,0,0,0.1);border-radius:4px;">📄 View Source Code</summary>
+                            <div class="file-content" style="margin-top:0.5rem;">${escapeHtml(content)}</div>
+                        </details>
+                    `;
+                } else if (fileType === 'code' || fileType === 'special') {
                     contentDiv.innerHTML = `<div class="file-content">${escapeHtml(content || '')}</div>`;
                 } else {
                     contentDiv.innerHTML = `<div style="text-align:center;padding:2rem;">
